@@ -8,7 +8,7 @@ export async function POST(req) {
     if (error) return NextResponse.json({ error }, { status });
 
     const { clientName, clientPhone, clientEmail, machineId,
-            plan, deviceLimit, customDays, notes } = await req.json();
+            plan, deviceLimit, customDays, notes, price } = await req.json();
 
     if (!machineId?.trim() || !plan || !clientName?.trim())
         return NextResponse.json({ error: 'clientName, machineId and plan are required' }, { status: 400 });
@@ -17,6 +17,7 @@ export async function POST(req) {
     const expiryTs = planToExpiry(plan, customDays);
     const isLifetime = plan === 'lifetime';
     const key = generateKey({ machineId: machineId.trim().toUpperCase(), expiryTs, deviceLimit: dl });
+    const priceNum = parseFloat(price) || 0;
 
     const license = {
         key,
@@ -24,6 +25,7 @@ export async function POST(req) {
         deviceLimit: dl,
         expiryTs,
         isLifetime,
+        price:        priceNum,
         machineId:    machineId.trim().toUpperCase(),
         clientName:   clientName.trim(),
         clientPhone:  (clientPhone || '').trim(),

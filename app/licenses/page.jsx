@@ -17,7 +17,7 @@ const PLANS = [
 const DEFAULT_FORM = {
     clientName: '', clientPhone: '', clientEmail: '',
     machineId: '', plan: 'monthly', deviceLimit: '1',
-    customDays: '', notes: '',
+    customDays: '', notes: '', price: '',
 };
 
 function fmtDate(ts) {
@@ -31,6 +31,7 @@ function getDaysLeft(l) {
 }
 
 export default function LicensesPage() {
+    const [user,     setUser]     = useState(null);
     const [licenses, setLicenses] = useState([]);
     const [loading,  setLoading]  = useState(true);
     const [search,   setSearch]   = useState('');
@@ -43,6 +44,8 @@ export default function LicensesPage() {
     const [revReason,setRevReason]= useState('');
     const [revBusy,  setRevBusy]  = useState(false);
     const [copied,   setCopied]   = useState('');
+    const [showDel,  setShowDel]  = useState(null); // { key, clientName }
+    const [delBusy,  setDelBusy]  = useState(false);
 
     const load = async () => {
         setLoading(true);
@@ -51,7 +54,10 @@ export default function LicensesPage() {
         setLoading(false);
     };
 
-    useEffect(() => { load(); }, []);
+    useEffect(() => {
+        try { const u = localStorage.getItem('zyqora_admin_user'); if (u) setUser(JSON.parse(u)); } catch {}
+        load();
+    }, []);
 
     const filtered = licenses.filter(l => {
         const q = search.toLowerCase();
@@ -84,6 +90,13 @@ export default function LicensesPage() {
         const r = await apiFetch('/api/licenses/revoke', { method: 'POST', body: { key: showRev, reason: revReason } });
         if (r?.ok) { setShowRev(null); setRevReason(''); load(); }
         setRevBusy(false);
+    };
+
+    const deleteLic = async () => {
+        setDelBusy(true);
+        const r = await apiFetch('/api/licenses/delete', { method: 'POST', body: { key: showDel.key } });
+        if (r?.ok) { setShowDel(null); load(); }
+        setDelBusy(false);
     };
 
     const now = Math.floor(Date.now() / 1000);
@@ -177,14 +190,25 @@ export default function LicensesPage() {
                                                 {!l.revoked && !isExpired && <span className="badge badge-active">Active</span>}
                                             </td>
                                             <td>
-                                                {!l.revoked && (
-                                                    <button
-                                                        className="btn btn-danger btn-sm"
-                                                        onClick={() => { setShowRev(l.key); setRevReason(''); }}
-                                                    >
-                                                        Revoke
-                                                    </button>
-                                                )}
+                                                <div style={{ display: 'flex', gap: 6 }}>
+                                                    {!l.revoked && (
+                                                        <button
+                                                            className="btn btn-danger btn-sm"
+                                                            onClick={() => { setShowRev(l.key); setRevReason(''); }}
+                                                        >
+                                                            Revoke
+                                                        </button>
+                                                    )}
+                                                    {user?.role === 'super' && (
+                                                        <button
+                                                            className="btn btn-ghost btn-sm"
+                                                            style={{ color: '#ef4444', borderColor: 'rgba(239,68,68,.3)' }}
+                                                            onClick={() => setShowDel({ key: l.key, clientName: l.clientName })}
+                                                        >
+                                                            Delete
+                                                        </button>
+                                                    )}
+                                                </div>
                                             </td>
                                         </tr>
                                     );
@@ -213,9 +237,9 @@ export default function LicensesPage() {
                                 <button
                                     className="btn btn-primary"
                                     style={{ width: '100%' }}
-                                    onClick={() => { navigator.clipboard.writeText(genKey); }}
+                                    onClick={() => { navigator.clipboard.writeText(genKey); setCopied('__genkey__'); setTimeout(() => setCopied(''), 2000); }}
                                 >
-                                    Copy Key
+                                    {copied === '__genkey__' ? '✓ Key Copied!' : 'Copy Key'}
                                 </button>
                                 <button
                                     className="btn btn-ghost"
@@ -274,11 +298,19 @@ export default function LicensesPage() {
                                                 onChange={e => setForm(f => ({ ...f, customDays: e.target.value }))} placeholder="e.g. 45" />
                                         </div>
                                     )}
-                                    <div className="form-group">
-                                        <label className="form-label">Notes</label>
-                                        <textarea className="form-textarea" value={form.notes}
-                                            onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-                                            placeholder="Internal note (not shown to client)" />
+                                    <div className="form-row">
+                                        <div className="form-group">
+                                            <label className="form-label">Price (₹)</label>
+                                            <input className="form-input" type="number" min="0" step="0.01" value={form.price}
+                                                onChange={e => setForm(f => ({ ...f, price: e.target.value }))}
+                                                placeholder="e.g. 999" />
+                                        </div>
+                                        <div className="form-group">
+                                            <label className="form-label">Notes</label>
+                                            <textarea className="form-textarea" value={form.notes}
+                                                onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+                                                placeholder="Internal note" style={{ minHeight: 42 }} />
+                                        </div>
                                     </div>
                                     {genErr && <div className="form-error">{genErr}</div>}
                                 </div>
@@ -290,6 +322,33 @@ export default function LicensesPage() {
                                 </div>
                             </form>
                         )}
+                    </div>
+                </div>
+            )}
+
+            {/* ── Delete Modal ───────────────────────────────────────────── */}
+            {showDel && (
+                <div className="modal-overlay">
+                    <div className="modal" style={{ maxWidth: 420 }}>
+                        <div className="modal-header">
+                            <span className="modal-title">Delete License</span>
+                            <button className="modal-close" onClick={() => setShowDel(null)} disabled={delBusy}>×</button>
+                        </div>
+                        <div className="modal-body">
+                            <p style={{ color: '#94a3b8', fontSize: 13 }}>
+                                Permanently delete license for <span style={{ color: '#e2e8f0', fontWeight: 700 }}>{showDel.clientName}</span>?<br />
+                                <span style={{ fontSize: 12, color: '#ef4444' }}>This removes the record entirely and cannot be undone.</span>
+                            </p>
+                            <div style={{ fontFamily: 'Courier New, monospace', fontSize: 11, color: '#64748b', background: 'rgba(255,255,255,.03)', borderRadius: 7, padding: '8px 12px', wordBreak: 'break-all' }}>
+                                {showDel.key}
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-ghost" onClick={() => setShowDel(null)} disabled={delBusy}>Cancel</button>
+                            <button className="btn btn-danger" onClick={deleteLic} disabled={delBusy}>
+                                {delBusy ? 'Deleting…' : 'Delete Permanently'}
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

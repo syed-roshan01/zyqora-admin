@@ -37,10 +37,12 @@ export default function DashboardPage() {
     }, []);
 
     const now = Math.floor(Date.now() / 1000);
+    const todayStart = Math.floor(new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime() / 1000);
     const total    = licenses.length;
     const active   = licenses.filter(l => !l.revoked && (l.isLifetime || l.expiryTs > now)).length;
     const revoked  = licenses.filter(l => l.revoked).length;
     const expired  = licenses.filter(l => !l.revoked && !l.isLifetime && l.expiryTs <= now).length;
+    const issuedToday = licenses.filter(l => (l.issuedAt || 0) >= todayStart).length;
     const recent   = [...licenses].slice(0, 8);
 
     const planCount = licenses.reduce((acc, l) => {
@@ -91,6 +93,11 @@ export default function DashboardPage() {
                                         <div className="stat-sub">{admins.filter(a => a.active).length} active</div>
                                     </div>
                                 )}
+                                <div className="stat-card">
+                                    <div className="stat-label">Issued Today</div>
+                                    <div className="stat-value" style={{ color: '#f59e0b' }}>{issuedToday}</div>
+                                    <div className="stat-sub">Since midnight</div>
+                                </div>
                             </div>
 
                             {/* Plan breakdown */}

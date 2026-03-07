@@ -7,6 +7,7 @@ import { getToken, clearToken, apiFetch } from '@/lib/apiFetch';
 const ALL_NAV = [
     { href: '/dashboard', icon: '◈',  label: 'Dashboard' },
     { href: '/licenses',  icon: '⚿',  label: 'Licenses'  },
+    { href: '/sales',     icon: '₹',  label: 'Sales'     },
     { href: '/admins',    icon: '⊛',  label: 'Admins',    superOnly: true },
 ];
 
