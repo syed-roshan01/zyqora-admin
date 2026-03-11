@@ -8,7 +8,9 @@ export async function POST(req) {
     if (error) return NextResponse.json({ error }, { status });
 
     const { clientName, clientPhone, clientEmail, machineId,
-            plan, deviceLimit, customDays, notes, price } = await req.json();
+            plan, deviceLimit, customDays, notes, price, features } = await req.json();
+
+    const DEFAULT_FEATURES = { mobile: true, trustBuilder: true, autoReply: true, chatbot: true, liveChat: true, groupGrabber: true };
 
     if (!machineId?.trim() || !plan || !clientName?.trim())
         return NextResponse.json({ error: 'clientName, machineId and plan are required' }, { status: 400 });
@@ -31,6 +33,7 @@ export async function POST(req) {
         clientPhone:  (clientPhone || '').trim(),
         clientEmail:  (clientEmail || '').trim(),
         notes:        (notes || '').trim(),
+        features:     features || DEFAULT_FEATURES,
         issuedBy:     session.sub,
         issuedByName: session.username,
         issuedAt:     Math.floor(Date.now() / 1000),
