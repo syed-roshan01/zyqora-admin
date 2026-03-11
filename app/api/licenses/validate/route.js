@@ -45,6 +45,7 @@ export async function POST(req) {
             daysLeft,
             secondsLeft,
             expiry:      crypto.isLifetime ? null : new Date(crypto.expiryTs * 1000).toISOString(),
+            features:    license.features || null,
         });
 
     } catch (err) {
