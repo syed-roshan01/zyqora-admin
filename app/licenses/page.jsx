@@ -27,6 +27,7 @@ const DEFAULT_FEATURES = { mobile: true, trustBuilder: true, autoReply: true, ch
 
 const DEFAULT_FORM = {
     clientName: '', clientPhone: '', clientEmail: '',
+    businessCategory: '', website: '',
     machineId: '', plan: 'monthly', deviceLimit: '1',
     customDays: '', notes: '', price: '',
     features: { ...DEFAULT_FEATURES },
@@ -60,7 +61,7 @@ export default function LicensesPage() {
     const [delBusy,  setDelBusy]  = useState(false);
     const [showDetail,setShowDetail]= useState(null);   // license object
     const [showEdit,  setShowEdit]  = useState(null);   // license object
-    const [editForm,  setEditForm]  = useState({ price: '', notes: '', features: { ...DEFAULT_FEATURES } });
+    const [editForm,  setEditForm]  = useState({ clientName: '', clientPhone: '', clientEmail: '', businessCategory: '', website: '', price: '', notes: '', features: { ...DEFAULT_FEATURES } });
     const [editBusy,  setEditBusy]  = useState(false);
     const [editErr,   setEditErr]   = useState('');
 
@@ -120,7 +121,7 @@ export default function LicensesPage() {
         e.preventDefault();
         setEditBusy(true);
         setEditErr('');
-        const r = await apiFetch('/api/licenses/update', { method: 'POST', body: { key: showEdit.key, price: editForm.price, notes: editForm.notes, features: editForm.features } });
+        const r = await apiFetch('/api/licenses/update', { method: 'POST', body: { key: showEdit.key, clientName: editForm.clientName, clientPhone: editForm.clientPhone, clientEmail: editForm.clientEmail, businessCategory: editForm.businessCategory, website: editForm.website, price: editForm.price, notes: editForm.notes, features: editForm.features } });
         if (!r?.ok) { setEditErr(r?.data?.error || 'Failed to update'); setEditBusy(false); return; }
         setShowEdit(null);
         setEditBusy(false);
@@ -221,7 +222,7 @@ export default function LicensesPage() {
                                                 <div style={{ display: 'flex', gap: 6 }}>
                                                     <button
                                                         className="btn btn-ghost btn-sm"
-                                                        onClick={() => { setShowEdit(l); setEditForm({ price: l.price ?? '', notes: l.notes || '', features: { ...DEFAULT_FEATURES, ...(l.features || {}) } }); setEditErr(''); }}
+                                                        onClick={() => { setShowEdit(l); setEditForm({ clientName: l.clientName || '', clientPhone: l.clientPhone || '', clientEmail: l.clientEmail || '', businessCategory: l.businessCategory || '', website: l.website || '', price: l.price ?? '', notes: l.notes || '', features: { ...DEFAULT_FEATURES, ...(l.features || {}) } }); setEditErr(''); }}
                                                         title="Edit price & notes"
                                                     >✎</button>
                                                     {!l.revoked && (
@@ -301,6 +302,18 @@ export default function LicensesPage() {
                                         <label className="form-label">Email</label>
                                         <input className="form-input" type="email" value={form.clientEmail}
                                             onChange={e => setForm(f => ({ ...f, clientEmail: e.target.value }))} placeholder="client@email.com" />
+                                    </div>
+                                    <div className="form-row">
+                                        <div className="form-group">
+                                            <label className="form-label">Business Category</label>
+                                            <input className="form-input" value={form.businessCategory}
+                                                onChange={e => setForm(f => ({ ...f, businessCategory: e.target.value }))} placeholder="e.g. E-commerce, Real Estate" />
+                                        </div>
+                                        <div className="form-group">
+                                            <label className="form-label">Website</label>
+                                            <input className="form-input" value={form.website}
+                                                onChange={e => setForm(f => ({ ...f, website: e.target.value }))} placeholder="https://example.com" />
+                                        </div>
                                     </div>
                                     <div className="form-group">
                                         <label className="form-label">Machine ID *</label>
@@ -461,6 +474,14 @@ export default function LicensesPage() {
                                     <div style={{ fontSize: 13, color: '#e2e8f0' }}>{showDetail.clientEmail || '—'}</div>
                                 </div>
                                 <div>
+                                    <div style={{ fontSize: 10, color: '#4a5980', fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Business Category</div>
+                                    <div style={{ fontSize: 13, color: '#e2e8f0' }}>{showDetail.businessCategory || '—'}</div>
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: 10, color: '#4a5980', fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Website</div>
+                                    <div style={{ fontSize: 13, color: '#e2e8f0' }}>{showDetail.website || 'No website'}</div>
+                                </div>
+                                <div>
                                     <div style={{ fontSize: 10, color: '#4a5980', fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Plan</div>
                                     <div><span className={`badge badge-plan-${showDetail.plan}`}>{showDetail.plan}</span></div>
                                 </div>
@@ -539,7 +560,7 @@ export default function LicensesPage() {
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-ghost" onClick={() => setShowDetail(null)}>Close</button>
-                            <button className="btn btn-primary" onClick={() => { setShowEdit(showDetail); setEditForm({ price: showDetail.price ?? '', notes: showDetail.notes || '', features: { ...DEFAULT_FEATURES, ...(showDetail.features || {}) } }); setEditErr(''); setShowDetail(null); }}>✎ Edit</button>
+                            <button className="btn btn-primary" onClick={() => { setShowEdit(showDetail); setEditForm({ clientName: showDetail.clientName || '', clientPhone: showDetail.clientPhone || '', clientEmail: showDetail.clientEmail || '', price: showDetail.price ?? '', notes: showDetail.notes || '', features: { ...DEFAULT_FEATURES, ...(showDetail.features || {}) } }); setEditErr(''); setShowDetail(null); }}>✎ Edit</button>
                         </div>
                     </div>
                 </div>
@@ -555,14 +576,45 @@ export default function LicensesPage() {
                         </div>
                         <form onSubmit={updateLicense}>
                             <div className="modal-body">
-                                <div style={{ fontSize: 12, color: '#64748b', marginBottom: 12 }}>
-                                    Editing: <span style={{ color: '#e2e8f0', fontWeight: 600 }}>{showEdit.clientName}</span>
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label className="form-label">Client Name *</label>
+                                        <input className="form-input" required value={editForm.clientName}
+                                            onChange={e => setEditForm(f => ({ ...f, clientName: e.target.value }))}
+                                            placeholder="e.g. John Doe" autoFocus />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">WhatsApp / Phone</label>
+                                        <input className="form-input" value={editForm.clientPhone}
+                                            onChange={e => setEditForm(f => ({ ...f, clientPhone: e.target.value }))}
+                                            placeholder="+91 9876543210" />
+                                    </div>
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Email</label>
+                                    <input className="form-input" type="email" value={editForm.clientEmail}
+                                        onChange={e => setEditForm(f => ({ ...f, clientEmail: e.target.value }))}
+                                        placeholder="client@email.com" />
+                                </div>
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label className="form-label">Business Category</label>
+                                        <input className="form-input" value={editForm.businessCategory}
+                                            onChange={e => setEditForm(f => ({ ...f, businessCategory: e.target.value }))}
+                                            placeholder="e.g. E-commerce, Real Estate" />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Website</label>
+                                        <input className="form-input" value={editForm.website}
+                                            onChange={e => setEditForm(f => ({ ...f, website: e.target.value }))}
+                                            placeholder="https://example.com" />
+                                    </div>
                                 </div>
                                 <div className="form-group">
                                     <label className="form-label">Price (₹)</label>
                                     <input className="form-input" type="number" min="0" step="0.01" value={editForm.price}
                                         onChange={e => setEditForm(f => ({ ...f, price: e.target.value }))}
-                                        placeholder="e.g. 999" autoFocus />
+                                        placeholder="e.g. 999" />
                                 </div>
                                 <div className="form-group">
                                     <label className="form-label">Notes</label>

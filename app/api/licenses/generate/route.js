@@ -8,7 +8,8 @@ export async function POST(req) {
     if (error) return NextResponse.json({ error }, { status });
 
     const { clientName, clientPhone, clientEmail, machineId,
-            plan, deviceLimit, customDays, notes, price, features } = await req.json();
+            plan, deviceLimit, customDays, notes, price, features,
+            businessCategory, website } = await req.json();
 
     const DEFAULT_FEATURES = { mobile: true, trustBuilder: true, autoReply: true, chatbot: true, liveChat: true, groupGrabber: true };
 
@@ -30,9 +31,11 @@ export async function POST(req) {
         price:        priceNum,
         machineId:    machineId.trim().toUpperCase(),
         clientName:   clientName.trim(),
-        clientPhone:  (clientPhone || '').trim(),
-        clientEmail:  (clientEmail || '').trim(),
-        notes:        (notes || '').trim(),
+        clientPhone:      (clientPhone || '').trim(),
+        clientEmail:      (clientEmail || '').trim(),
+        businessCategory: (businessCategory || '').trim(),
+        website:          (website || '').trim() || 'No website',
+        notes:            (notes || '').trim(),
         features:     features || DEFAULT_FEATURES,
         issuedBy:     session.sub,
         issuedByName: session.username,

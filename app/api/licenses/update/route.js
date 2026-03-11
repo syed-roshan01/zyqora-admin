@@ -6,7 +6,7 @@ export async function POST(req) {
     const { error, status } = await requireAuth(req);
     if (error) return NextResponse.json({ error }, { status });
 
-    const { key, price, notes, features } = await req.json();
+    const { key, clientName, clientPhone, clientEmail, businessCategory, website, price, notes, features } = await req.json();
     if (!key) return NextResponse.json({ error: 'key is required' }, { status: 400 });
 
     const license = await getLicense(key.trim().toUpperCase());
@@ -14,6 +14,11 @@ export async function POST(req) {
 
     const updated = {
         ...license,
+        ...(clientName       !== undefined ? { clientName:       clientName.trim()              } : {}),
+        ...(clientPhone      !== undefined ? { clientPhone:      clientPhone.trim()             } : {}),
+        ...(clientEmail      !== undefined ? { clientEmail:      clientEmail.trim()             } : {}),
+        ...(businessCategory !== undefined ? { businessCategory: businessCategory.trim()        } : {}),
+        ...(website          !== undefined ? { website:          website.trim() || 'No website' } : {}),
         price: parseFloat(price) || 0,
         notes: (notes || '').trim(),
         ...(features !== undefined ? { features } : {}),
