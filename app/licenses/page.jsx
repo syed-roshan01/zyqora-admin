@@ -60,7 +60,7 @@ export default function LicensesPage() {
     const [delBusy,  setDelBusy]  = useState(false);
     const [showDetail,setShowDetail]= useState(null);   // license object
     const [showEdit,  setShowEdit]  = useState(null);   // license object
-    const [editForm,  setEditForm]  = useState({ price: '', notes: '' });
+    const [editForm,  setEditForm]  = useState({ price: '', notes: '', features: { ...DEFAULT_FEATURES } });
     const [editBusy,  setEditBusy]  = useState(false);
     const [editErr,   setEditErr]   = useState('');
 
@@ -120,7 +120,7 @@ export default function LicensesPage() {
         e.preventDefault();
         setEditBusy(true);
         setEditErr('');
-        const r = await apiFetch('/api/licenses/update', { method: 'POST', body: { key: showEdit.key, price: editForm.price, notes: editForm.notes } });
+        const r = await apiFetch('/api/licenses/update', { method: 'POST', body: { key: showEdit.key, price: editForm.price, notes: editForm.notes, features: editForm.features } });
         if (!r?.ok) { setEditErr(r?.data?.error || 'Failed to update'); setEditBusy(false); return; }
         setShowEdit(null);
         setEditBusy(false);
@@ -221,7 +221,7 @@ export default function LicensesPage() {
                                                 <div style={{ display: 'flex', gap: 6 }}>
                                                     <button
                                                         className="btn btn-ghost btn-sm"
-                                                        onClick={() => { setShowEdit(l); setEditForm({ price: l.price ?? '', notes: l.notes || '' }); setEditErr(''); }}
+                                                        onClick={() => { setShowEdit(l); setEditForm({ price: l.price ?? '', notes: l.notes || '', features: { ...DEFAULT_FEATURES, ...(l.features || {}) } }); setEditErr(''); }}
                                                         title="Edit price & notes"
                                                     >✎</button>
                                                     {!l.revoked && (
@@ -539,7 +539,7 @@ export default function LicensesPage() {
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-ghost" onClick={() => setShowDetail(null)}>Close</button>
-                            <button className="btn btn-primary" onClick={() => { setShowEdit(showDetail); setEditForm({ price: showDetail.price ?? '', notes: showDetail.notes || '' }); setEditErr(''); setShowDetail(null); }}>✎ Edit Price &amp; Notes</button>
+                            <button className="btn btn-primary" onClick={() => { setShowEdit(showDetail); setEditForm({ price: showDetail.price ?? '', notes: showDetail.notes || '', features: { ...DEFAULT_FEATURES, ...(showDetail.features || {}) } }); setEditErr(''); setShowDetail(null); }}>✎ Edit</button>
                         </div>
                     </div>
                 </div>
@@ -548,7 +548,7 @@ export default function LicensesPage() {
             {/* ── Edit Modal ────────────────────────────────────────────── */}
             {showEdit && (
                 <div className="modal-overlay">
-                    <div className="modal" style={{ maxWidth: 420 }}>
+                    <div className="modal" style={{ maxWidth: 540 }}>
                         <div className="modal-header">
                             <span className="modal-title">✎ Edit License</span>
                             <button className="modal-close" onClick={() => setShowEdit(null)} disabled={editBusy}>×</button>
@@ -569,6 +569,19 @@ export default function LicensesPage() {
                                     <textarea className="form-textarea" value={editForm.notes}
                                         onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}
                                         placeholder="Internal notes" style={{ minHeight: 80 }} />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label" style={{ marginBottom: 8 }}>Features</label>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                                        {FEATURE_OPTIONS.map(({ key, label, sub }) => (
+                                            <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '7px 10px', borderRadius: 8, border: '1px solid', borderColor: editForm.features[key] ? '#7c3aed' : '#252d42', background: editForm.features[key] ? 'rgba(124,58,237,.1)' : 'transparent', transition: 'all .15s', userSelect: 'none' }}>
+                                                <input type="checkbox" checked={editForm.features[key] ?? true}
+                                                    onChange={e => setEditForm(f => ({ ...f, features: { ...f.features, [key]: e.target.checked } }))}
+                                                    style={{ accentColor: '#7c3aed', width: 14, height: 14, flexShrink: 0 }} />
+                                                <span style={{ fontSize: 11.5, fontWeight: 600, color: editForm.features[key] ? '#e2e8f0' : '#4a5980' }}>{label}</span>
+                                            </label>
+                                        ))}
+                                    </div>
                                 </div>
                                 {editErr && <div className="form-error">{editErr}</div>}
                             </div>

@@ -6,7 +6,7 @@ export async function POST(req) {
     const { error, status } = await requireAuth(req);
     if (error) return NextResponse.json({ error }, { status });
 
-    const { key, price, notes } = await req.json();
+    const { key, price, notes, features } = await req.json();
     if (!key) return NextResponse.json({ error: 'key is required' }, { status: 400 });
 
     const license = await getLicense(key.trim().toUpperCase());
@@ -16,6 +16,7 @@ export async function POST(req) {
         ...license,
         price: parseFloat(price) || 0,
         notes: (notes || '').trim(),
+        ...(features !== undefined ? { features } : {}),
     };
     await saveLicense(updated);
     return NextResponse.json({ success: true, license: updated });
