@@ -25,6 +25,9 @@ export async function POST(req) {
         ...(session.role === 'super' && validationException !== undefined
             ? { validationException: !!validationException }
             : {}),
+        ...(session.role === 'super' && validationException === false
+            ? { exceptionBoundMachineId: null }
+            : {}),
     };
     await saveLicense(updated);
     return NextResponse.json({ success: true, license: updated });

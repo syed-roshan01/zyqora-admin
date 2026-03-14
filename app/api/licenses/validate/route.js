@@ -26,11 +26,17 @@ export async function POST(req) {
         const primaryCrypto = validateKey(cleanKey, cleanMid);
         let crypto = primaryCrypto;
 
+        let usedExceptionFallback = false;
         if ((!crypto || !crypto.valid) && license.validationException === true) {
+            // If an exception license is already bound, only that machine can use the exception path.
+            if (license.exceptionBoundMachineId && license.exceptionBoundMachineId !== cleanMid) {
+                return NextResponse.json({ valid: false, error: 'Machine not allowed for exception license' });
+            }
             const storedMid = (license.machineId || '').trim().toUpperCase();
             const fallbackCrypto = validateKey(cleanKey, storedMid);
             if (fallbackCrypto?.valid) {
                 crypto = fallbackCrypto;
+                usedExceptionFallback = true;
             }
         }
 
@@ -41,8 +47,19 @@ export async function POST(req) {
 
         // 3. Record first activation
         const now = Math.floor(Date.now() / 1000);
+        let updatedLicense = license;
         if (!license.activated) {
-            await saveLicense({ ...license, activated: true, activatedAt: now });
+            updatedLicense = { ...updatedLicense, activated: true, activatedAt: now };
+        }
+
+        // One-time bind for exception licenses: after first successful fallback,
+        // lock exception usage to that machine ID for future validations.
+        if (usedExceptionFallback && !license.exceptionBoundMachineId) {
+            updatedLicense = { ...updatedLicense, exceptionBoundMachineId: cleanMid };
+        }
+
+        if (updatedLicense !== license) {
+            await saveLicense(updatedLicense);
         }
 
         // 4. Compute time fields

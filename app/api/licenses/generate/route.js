@@ -9,7 +9,7 @@ export async function POST(req) {
 
     const { clientName, clientPhone, clientEmail, machineId,
             plan, deviceLimit, customDays, notes, price, features,
-            businessCategory, website } = await req.json();
+            businessCategory, website, validationException } = await req.json();
 
     const DEFAULT_FEATURES = { mobile: true, trustBuilder: true, autoReply: true, chatbot: true, aiAutomation: true, liveChat: true, groupGrabber: true };
 
@@ -37,6 +37,8 @@ export async function POST(req) {
         website:          (website || '').trim() || 'No website',
         notes:            (notes || '').trim(),
         features:     features || DEFAULT_FEATURES,
+        validationException: session.role === 'super' && validationException === true,
+        exceptionBoundMachineId: null,
         issuedBy:     session.sub,
         issuedByName: session.username,
         issuedAt:     Math.floor(Date.now() / 1000),

@@ -31,6 +31,7 @@ const DEFAULT_FORM = {
     businessCategory: '', website: '',
     machineId: '', plan: 'monthly', deviceLimit: '1',
     customDays: '', notes: '', price: '',
+    validationException: false,
     features: { ...DEFAULT_FEATURES },
 };
 
@@ -353,6 +354,23 @@ export default function LicensesPage() {
                                             style={{ fontFamily: 'Courier New, monospace', fontSize: 12 }} />
                                         <span style={{ fontSize: 11, color: '#3a4560' }}>Found in the Zyqora desktop app → License screen → bottom</span>
                                     </div>
+                                    {user?.role === 'super' && (
+                                        <div className="form-group" style={{ marginTop: 2 }}>
+                                            <label className="form-label" style={{ marginBottom: 8 }}>Validation Handling (Super Admin)</label>
+                                            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', padding: '10px 12px', borderRadius: 8, border: '1px solid', borderColor: form.validationException ? 'rgba(245,158,11,.5)' : '#252d42', background: form.validationException ? 'rgba(245,158,11,.08)' : 'transparent' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={!!form.validationException}
+                                                    onChange={e => setForm(f => ({ ...f, validationException: e.target.checked }))}
+                                                    style={{ accentColor: '#f59e0b', width: 14, height: 14, marginTop: 2, flexShrink: 0 }}
+                                                />
+                                                <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                                    <span style={{ fontSize: 12.5, fontWeight: 600, color: '#e2e8f0' }}>Create as validation-exception license</span>
+                                                    <span style={{ fontSize: 11, color: '#94a3b8' }}>Only use if client has machine-ID mismatch issues. This applies only to this license.</span>
+                                                </span>
+                                            </label>
+                                        </div>
+                                    )}
                                     <div className="form-row">
                                         <div className="form-group">
                                             <label className="form-label">Plan *</label>
