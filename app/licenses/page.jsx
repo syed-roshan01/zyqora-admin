@@ -63,7 +63,7 @@ export default function LicensesPage() {
     const [delBusy,  setDelBusy]  = useState(false);
     const [showDetail,setShowDetail]= useState(null);   // license object
     const [showEdit,  setShowEdit]  = useState(null);   // license object
-    const [editForm,  setEditForm]  = useState({ clientName: '', clientPhone: '', clientEmail: '', businessCategory: '', website: '', price: '', notes: '', features: { ...DEFAULT_FEATURES } });
+    const [editForm,  setEditForm]  = useState({ clientName: '', clientPhone: '', clientEmail: '', businessCategory: '', website: '', price: '', notes: '', features: { ...DEFAULT_FEATURES }, validationException: false });
     const [editBusy,  setEditBusy]  = useState(false);
     const [editErr,   setEditErr]   = useState('');
 
@@ -128,7 +128,7 @@ export default function LicensesPage() {
         e.preventDefault();
         setEditBusy(true);
         setEditErr('');
-        const r = await apiFetch('/api/licenses/update', { method: 'POST', body: { key: showEdit.key, clientName: editForm.clientName, clientPhone: editForm.clientPhone, clientEmail: editForm.clientEmail, businessCategory: editForm.businessCategory, website: editForm.website, price: editForm.price, notes: editForm.notes, features: editForm.features } });
+        const r = await apiFetch('/api/licenses/update', { method: 'POST', body: { key: showEdit.key, clientName: editForm.clientName, clientPhone: editForm.clientPhone, clientEmail: editForm.clientEmail, businessCategory: editForm.businessCategory, website: editForm.website, price: editForm.price, notes: editForm.notes, features: editForm.features, validationException: !!editForm.validationException } });
         if (!r?.ok) { setEditErr(r?.data?.error || 'Failed to update'); setEditBusy(false); return; }
         setShowEdit(null);
         setEditBusy(false);
@@ -252,7 +252,7 @@ export default function LicensesPage() {
                                                 <div style={{ display: 'flex', gap: 6 }}>
                                                     <button
                                                         className="btn btn-ghost btn-sm"
-                                                        onClick={() => { setShowEdit(l); setEditForm({ clientName: l.clientName || '', clientPhone: l.clientPhone || '', clientEmail: l.clientEmail || '', businessCategory: l.businessCategory || '', website: l.website || '', price: l.price ?? '', notes: l.notes || '', features: { ...DEFAULT_FEATURES, ...(l.features || {}) } }); setEditErr(''); }}
+                                                        onClick={() => { setShowEdit(l); setEditForm({ clientName: l.clientName || '', clientPhone: l.clientPhone || '', clientEmail: l.clientEmail || '', businessCategory: l.businessCategory || '', website: l.website || '', price: l.price ?? '', notes: l.notes || '', features: { ...DEFAULT_FEATURES, ...(l.features || {}) }, validationException: !!l.validationException }); setEditErr(''); }}
                                                         title="Edit price & notes"
                                                     >✎</button>
                                                     {!l.revoked && (
@@ -547,6 +547,12 @@ export default function LicensesPage() {
                                     <div style={{ fontSize: 10, color: '#4a5980', fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Status</div>
                                     <div>{showDetail.revoked ? <span className="badge badge-revoked">Revoked</span> : (() => { const d = getDaysLeft(showDetail); return (!showDetail.isLifetime && d !== null && d < 0) ? <span className="badge badge-expired">Expired</span> : <span className="badge badge-active">Active</span>; })()}</div>
                                 </div>
+                                <div>
+                                    <div style={{ fontSize: 10, color: '#4a5980', fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Validation Exception</div>
+                                    <div style={{ fontSize: 13, color: showDetail.validationException ? '#f59e0b' : '#94a3b8' }}>
+                                        {showDetail.validationException ? 'Enabled (super-admin only)' : 'Disabled'}
+                                    </div>
+                                </div>
                                 <div style={{ gridColumn: 'span 2' }}>
                                     <div style={{ fontSize: 10, color: '#4a5980', fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Machine ID</div>
                                     <div style={{ fontFamily: 'Courier New, monospace', fontSize: 11, color: '#94a3b8', wordBreak: 'break-all', background: 'rgba(255,255,255,.03)', borderRadius: 6, padding: '6px 10px' }}>{showDetail.machineId}</div>
@@ -590,7 +596,7 @@ export default function LicensesPage() {
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-ghost" onClick={() => setShowDetail(null)}>Close</button>
-                            <button className="btn btn-primary" onClick={() => { setShowEdit(showDetail); setEditForm({ clientName: showDetail.clientName || '', clientPhone: showDetail.clientPhone || '', clientEmail: showDetail.clientEmail || '', businessCategory: showDetail.businessCategory || '', website: showDetail.website || '', price: showDetail.price ?? '', notes: showDetail.notes || '', features: { ...DEFAULT_FEATURES, ...(showDetail.features || {}) } }); setEditErr(''); setShowDetail(null); }}>✎ Edit</button>
+                            <button className="btn btn-primary" onClick={() => { setShowEdit(showDetail); setEditForm({ clientName: showDetail.clientName || '', clientPhone: showDetail.clientPhone || '', clientEmail: showDetail.clientEmail || '', businessCategory: showDetail.businessCategory || '', website: showDetail.website || '', price: showDetail.price ?? '', notes: showDetail.notes || '', features: { ...DEFAULT_FEATURES, ...(showDetail.features || {}) }, validationException: !!showDetail.validationException }); setEditErr(''); setShowDetail(null); }}>✎ Edit</button>
                         </div>
                     </div>
                 </div>
@@ -665,6 +671,23 @@ export default function LicensesPage() {
                                         ))}
                                     </div>
                                 </div>
+                                {user?.role === 'super' && (
+                                    <div className="form-group" style={{ marginTop: 4 }}>
+                                        <label className="form-label" style={{ marginBottom: 8 }}>Validation Handling (Super Admin)</label>
+                                        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', padding: '10px 12px', borderRadius: 8, border: '1px solid', borderColor: editForm.validationException ? 'rgba(245,158,11,.5)' : '#252d42', background: editForm.validationException ? 'rgba(245,158,11,.08)' : 'transparent' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={!!editForm.validationException}
+                                                onChange={e => setEditForm(f => ({ ...f, validationException: e.target.checked }))}
+                                                style={{ accentColor: '#f59e0b', width: 14, height: 14, marginTop: 2, flexShrink: 0 }}
+                                            />
+                                            <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                                <span style={{ fontSize: 12.5, fontWeight: 600, color: '#e2e8f0' }}>Enable validation exception for this license</span>
+                                                <span style={{ fontSize: 11, color: '#94a3b8' }}>Use only if client faces machine-ID mismatch issues. This does not apply globally.</span>
+                                            </span>
+                                        </label>
+                                    </div>
+                                )}
                                 {editErr && <div className="form-error">{editErr}</div>}
                             </div>
                             <div className="modal-footer">

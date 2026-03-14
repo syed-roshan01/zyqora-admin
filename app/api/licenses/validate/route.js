@@ -13,19 +13,31 @@ export async function POST(req) {
         const cleanKey = key.trim().toUpperCase();
         const cleanMid = machineId.trim().toUpperCase();
 
-        // 1. Cryptographic HMAC check (same logic as desktop server.js)
-        const crypto = validateKey(cleanKey, cleanMid);
-        if (!crypto)
-            return NextResponse.json({ valid: false, error: 'Invalid key signature' });
-        if (!crypto.valid)
-            return NextResponse.json({ valid: false, error: 'Key expired' });
-
-        // 2. DB existence + revocation check
+        // 1. DB existence + revocation check first
         const license = await getLicense(cleanKey);
         if (!license)
             return NextResponse.json({ valid: false, error: 'Key not registered' });
         if (license.revoked)
             return NextResponse.json({ valid: false, error: 'Key has been revoked' });
+
+        // 2. Validate using client machineId by default.
+        //    If this specific license has super-admin exception enabled,
+        //    allow fallback to the machineId stored at generation time.
+        const primaryCrypto = validateKey(cleanKey, cleanMid);
+        let crypto = primaryCrypto;
+
+        if ((!crypto || !crypto.valid) && license.validationException === true) {
+            const storedMid = (license.machineId || '').trim().toUpperCase();
+            const fallbackCrypto = validateKey(cleanKey, storedMid);
+            if (fallbackCrypto?.valid) {
+                crypto = fallbackCrypto;
+            }
+        }
+
+        if (!crypto)
+            return NextResponse.json({ valid: false, error: 'Invalid key signature' });
+        if (!crypto.valid)
+            return NextResponse.json({ valid: false, error: 'Key expired' });
 
         // 3. Record first activation
         const now = Math.floor(Date.now() / 1000);

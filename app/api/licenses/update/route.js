@@ -3,10 +3,10 @@ import { requireAuth } from '@/lib/auth';
 import { getLicense, saveLicense } from '@/lib/kv';
 
 export async function POST(req) {
-    const { error, status } = await requireAuth(req);
+    const { error, status, session } = await requireAuth(req);
     if (error) return NextResponse.json({ error }, { status });
 
-    const { key, clientName, clientPhone, clientEmail, businessCategory, website, price, notes, features } = await req.json();
+    const { key, clientName, clientPhone, clientEmail, businessCategory, website, price, notes, features, validationException } = await req.json();
     if (!key) return NextResponse.json({ error: 'key is required' }, { status: 400 });
 
     const license = await getLicense(key.trim().toUpperCase());
@@ -22,6 +22,9 @@ export async function POST(req) {
         price: parseFloat(price) || 0,
         notes: (notes || '').trim(),
         ...(features !== undefined ? { features } : {}),
+        ...(session.role === 'super' && validationException !== undefined
+            ? { validationException: !!validationException }
+            : {}),
     };
     await saveLicense(updated);
     return NextResponse.json({ success: true, license: updated });
