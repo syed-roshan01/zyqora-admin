@@ -11,7 +11,7 @@ export async function POST(req) {
             plan, deviceLimit, customDays, notes, price, features,
             businessCategory, website } = await req.json();
 
-    const DEFAULT_FEATURES = { mobile: true, trustBuilder: true, autoReply: true, chatbot: true, liveChat: true, groupGrabber: true };
+    const DEFAULT_FEATURES = { mobile: true, trustBuilder: true, autoReply: true, chatbot: true, aiAutomation: true, liveChat: true, groupGrabber: true };
 
     if (!machineId?.trim() || !plan || !clientName?.trim())
         return NextResponse.json({ error: 'clientName, machineId and plan are required' }, { status: 400 });

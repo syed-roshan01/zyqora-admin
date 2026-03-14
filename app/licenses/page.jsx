@@ -19,11 +19,12 @@ const FEATURE_OPTIONS = [
     { key: 'trustBuilder', label: 'Trust Builder',   sub: 'Account warming'   },
     { key: 'autoReply',    label: 'Auto Reply',      sub: 'Auto responses'    },
     { key: 'chatbot',      label: 'Chatbot Flows',   sub: 'Flow builder'      },
+    { key: 'aiAutomation', label: 'AI Automation',   sub: 'AI bot assistant'  },
     { key: 'liveChat',     label: 'Live Chat',       sub: 'Real-time chat'    },
     { key: 'groupGrabber', label: 'Group Grabber',   sub: 'Extract groups'    },
 ];
 
-const DEFAULT_FEATURES = { mobile: true, trustBuilder: true, autoReply: true, chatbot: true, liveChat: true, groupGrabber: true };
+const DEFAULT_FEATURES = { mobile: true, trustBuilder: true, autoReply: true, chatbot: true, aiAutomation: true, liveChat: true, groupGrabber: true };
 
 const DEFAULT_FORM = {
     clientName: '', clientPhone: '', clientEmail: '',
@@ -57,6 +58,7 @@ export default function LicensesPage() {
     const [revReason,setRevReason]= useState('');
     const [revBusy,  setRevBusy]  = useState(false);
     const [copied,   setCopied]   = useState('');
+    const [issuedByFilter, setIssuedByFilter] = useState('');
     const [showDel,  setShowDel]  = useState(null); // { key, clientName }
     const [delBusy,  setDelBusy]  = useState(false);
     const [showDetail,setShowDetail]= useState(null);   // license object
@@ -77,12 +79,17 @@ export default function LicensesPage() {
         load();
     }, []);
 
+    // Unique admins for filter dropdown
+    const adminOptions = [...new Set(licenses.map(l => l.issuedByName).filter(Boolean))].sort();
+
     const filtered = licenses.filter(l => {
         const q = search.toLowerCase();
-        return !q || l.clientName?.toLowerCase().includes(q) ||
+        const matchesSearch = !q || l.clientName?.toLowerCase().includes(q) ||
                l.key.toLowerCase().includes(q) ||
                l.clientPhone?.toLowerCase().includes(q) ||
                l.machineId?.toLowerCase().includes(q);
+        const matchesAdmin = !issuedByFilter || l.issuedByName === issuedByFilter;
+        return matchesSearch && matchesAdmin;
     });
 
     const copyKey = (key) => {
@@ -144,16 +151,39 @@ export default function LicensesPage() {
                 </div>
 
                 <div className="page-body">
-                    {/* Search */}
-                    <div className="search-bar" style={{ marginBottom: 16 }}>
-                        <input
-                            className="form-input search-input"
-                            placeholder="Search by client, key, phone or machine ID…"
-                            value={search}
-                            onChange={e => setSearch(e.target.value)}
-                        />
-                        {search && (
-                            <button className="btn btn-ghost btn-sm" onClick={() => setSearch('')}>Clear</button>
+                    {/* Search + Admin filter (superadmin only) */}
+                    <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <div className="search-bar" style={{ flex: 1, minWidth: 220, marginBottom: 0 }}>
+                            <input
+                                className="form-input search-input"
+                                placeholder="Search by client, key, phone or machine ID…"
+                                value={search}
+                                onChange={e => setSearch(e.target.value)}
+                            />
+                            {search && (
+                                <button className="btn btn-ghost btn-sm" onClick={() => setSearch('')}>Clear</button>
+                            )}
+                        </div>
+                        {user?.role === 'super' && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <label style={{ fontSize: 12, color: '#4a5980', whiteSpace: 'nowrap', fontWeight: 600 }}>Issued By:</label>
+                                <select
+                                    className="form-input"
+                                    style={{ minWidth: 160, padding: '8px 12px', fontSize: 13 }}
+                                    value={issuedByFilter}
+                                    onChange={e => setIssuedByFilter(e.target.value)}
+                                >
+                                    <option value="">All Admins ({licenses.length})</option>
+                                    {adminOptions.map(name => (
+                                        <option key={name} value={name}>
+                                            {name} ({licenses.filter(l => l.issuedByName === name).length})
+                                        </option>
+                                    ))}
+                                </select>
+                                {issuedByFilter && (
+                                    <button className="btn btn-ghost btn-sm" onClick={() => setIssuedByFilter('')}>✕</button>
+                                )}
+                            </div>
                         )}
                     </div>
 
@@ -560,7 +590,7 @@ export default function LicensesPage() {
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-ghost" onClick={() => setShowDetail(null)}>Close</button>
-                            <button className="btn btn-primary" onClick={() => { setShowEdit(showDetail); setEditForm({ clientName: showDetail.clientName || '', clientPhone: showDetail.clientPhone || '', clientEmail: showDetail.clientEmail || '', price: showDetail.price ?? '', notes: showDetail.notes || '', features: { ...DEFAULT_FEATURES, ...(showDetail.features || {}) } }); setEditErr(''); setShowDetail(null); }}>✎ Edit</button>
+                            <button className="btn btn-primary" onClick={() => { setShowEdit(showDetail); setEditForm({ clientName: showDetail.clientName || '', clientPhone: showDetail.clientPhone || '', clientEmail: showDetail.clientEmail || '', businessCategory: showDetail.businessCategory || '', website: showDetail.website || '', price: showDetail.price ?? '', notes: showDetail.notes || '', features: { ...DEFAULT_FEATURES, ...(showDetail.features || {}) } }); setEditErr(''); setShowDetail(null); }}>✎ Edit</button>
                         </div>
                     </div>
                 </div>
