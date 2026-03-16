@@ -30,7 +30,7 @@ export async function POST(req) {
         if ((!crypto || !crypto.valid) && license.validationException === true) {
             // If an exception license is already bound, only that machine can use the exception path.
             if (license.exceptionBoundMachineId && license.exceptionBoundMachineId !== cleanMid) {
-                return NextResponse.json({ valid: false, error: 'Machine not allowed for exception license' });
+                return NextResponse.json({ valid: false, error: 'Machine not allowed for exception license. Ask admin to re-save exception for this key.' });
             }
             const storedMid = (license.machineId || '').trim().toUpperCase();
             const fallbackCrypto = validateKey(cleanKey, storedMid);

@@ -12,6 +12,9 @@ export async function POST(req) {
     const license = await getLicense(key.trim().toUpperCase());
     if (!license) return NextResponse.json({ error: 'License not found' }, { status: 404 });
 
+    const canSetValidationException = session.role === 'super' && validationException !== undefined;
+    const nextValidationException = canSetValidationException ? !!validationException : license.validationException;
+
     const updated = {
         ...license,
         ...(clientName       !== undefined ? { clientName:       clientName.trim()              } : {}),
@@ -22,10 +25,11 @@ export async function POST(req) {
         price: parseFloat(price) || 0,
         notes: (notes || '').trim(),
         ...(features !== undefined ? { features } : {}),
-        ...(session.role === 'super' && validationException !== undefined
-            ? { validationException: !!validationException }
+        ...(canSetValidationException
+            ? { validationException: nextValidationException }
             : {}),
-        ...(session.role === 'super' && validationException === false
+        // When a super admin touches exception mode, reset bound machine so it can re-bind cleanly.
+        ...(canSetValidationException
             ? { exceptionBoundMachineId: null }
             : {}),
     };
