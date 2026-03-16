@@ -28,10 +28,7 @@ export async function POST(req) {
 
         let usedExceptionFallback = false;
         if ((!crypto || !crypto.valid) && license.validationException === true) {
-            // If an exception license is already bound, only that machine can use the exception path.
-            if (license.exceptionBoundMachineId && license.exceptionBoundMachineId !== cleanMid) {
-                return NextResponse.json({ valid: false, error: 'Machine not allowed for exception license. Ask admin to re-save exception for this key.' });
-            }
+            // Exception mode: validate against stored machine signature and allow re-bind to current machine.
             const storedMid = (license.machineId || '').trim().toUpperCase();
             const fallbackCrypto = validateKey(cleanKey, storedMid);
             if (fallbackCrypto?.valid) {
@@ -52,9 +49,8 @@ export async function POST(req) {
             updatedLicense = { ...updatedLicense, activated: true, activatedAt: now };
         }
 
-        // One-time bind for exception licenses: after first successful fallback,
-        // lock exception usage to that machine ID for future validations.
-        if (usedExceptionFallback && !license.exceptionBoundMachineId) {
+        // Exception mode re-binds to latest validated machine.
+        if (usedExceptionFallback && license.exceptionBoundMachineId !== cleanMid) {
             updatedLicense = { ...updatedLicense, exceptionBoundMachineId: cleanMid };
         }
 
