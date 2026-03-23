@@ -8,6 +8,7 @@ const ALL_NAV = [
     { href: '/dashboard', icon: '◈',  label: 'Dashboard' },
     { href: '/licenses',  icon: '⚿',  label: 'Licenses'  },
     { href: '/sales',     icon: '₹',  label: 'Sales'     },
+    { href: '/expenses',  icon: '₹-', label: 'Expenses'  },
     { href: '/admins',    icon: '⊛',  label: 'Admins',    superOnly: true },
 ];
 

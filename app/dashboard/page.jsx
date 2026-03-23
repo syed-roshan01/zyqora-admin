@@ -17,6 +17,8 @@ function getDaysLeft(lic) {
 export default function DashboardPage() {
     const [licenses, setLicenses] = useState([]);
     const [admins,   setAdmins]   = useState([]);
+    const [sales,    setSales]    = useState([]);
+    const [expenses, setExpenses] = useState([]);
     const [user,     setUser]     = useState(null);
     const [loading,  setLoading]  = useState(true);
 
@@ -25,12 +27,16 @@ export default function DashboardPage() {
         if (cached) try { setUser(JSON.parse(cached)); } catch {}
 
         const loadData = async () => {
-            const [lRes, aRes] = await Promise.all([
+            const [lRes, aRes, sRes, eRes] = await Promise.all([
                 apiFetch('/api/licenses/list'),
                 apiFetch('/api/admins/list').catch(() => null),
+                apiFetch('/api/sales'),
+                apiFetch('/api/expenses'),
             ]);
             if (lRes?.ok) setLicenses(lRes.data);
             if (aRes?.ok) setAdmins(aRes.data);
+            if (sRes?.ok) setSales(sRes.data);
+            if (eRes?.ok) setExpenses(eRes.data);
             setLoading(false);
         };
         loadData();
@@ -43,7 +49,20 @@ export default function DashboardPage() {
     const revoked  = licenses.filter(l => l.revoked).length;
     const expired  = licenses.filter(l => !l.revoked && !l.isLifetime && l.expiryTs <= now).length;
     const issuedToday = licenses.filter(l => (l.issuedAt || 0) >= todayStart).length;
+    const totalRevenue = sales.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
+    const totalExpenses = expenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    const netMoney = totalRevenue - totalExpenses;
     const recent   = [...licenses].slice(0, 8);
+    const topSpenders = user?.role === 'super'
+        ? Object.values(expenses.reduce((acc, e) => {
+            if (!acc[e.spentBy]) {
+                acc[e.spentBy] = { id: e.spentBy, name: e.spentByName, total: 0, count: 0 };
+            }
+            acc[e.spentBy].total += Number(e.amount) || 0;
+            acc[e.spentBy].count += 1;
+            return acc;
+        }, {})).sort((a, b) => b.total - a.total).slice(0, 5)
+        : [];
 
     const planCount = licenses.reduce((acc, l) => {
         if (!l.revoked) acc[l.plan] = (acc[l.plan] || 0) + 1;
@@ -98,7 +117,43 @@ export default function DashboardPage() {
                                     <div className="stat-value" style={{ color: '#f59e0b' }}>{issuedToday}</div>
                                     <div className="stat-sub">Since midnight</div>
                                 </div>
+                                <div className="stat-card">
+                                    <div className="stat-label">Total Revenue</div>
+                                    <div className="stat-value stat-green">₹{totalRevenue.toLocaleString('en-IN')}</div>
+                                    <div className="stat-sub">From license sales</div>
+                                </div>
+                                <div className="stat-card">
+                                    <div className="stat-label">Total Expenses</div>
+                                    <div className="stat-value stat-red">₹{totalExpenses.toLocaleString('en-IN')}</div>
+                                    <div className="stat-sub">All recorded expenses</div>
+                                </div>
+                                <div className="stat-card">
+                                    <div className="stat-label">Money Left</div>
+                                    <div className="stat-value" style={{ color: netMoney >= 0 ? '#22c55e' : '#ef4444' }}>
+                                        ₹{netMoney.toLocaleString('en-IN')}
+                                    </div>
+                                    <div className="stat-sub">Revenue minus expenses</div>
+                                </div>
                             </div>
+
+                            {user?.role === 'super' && topSpenders.length > 0 && (
+                                <div className="card" style={{ marginBottom: 24 }}>
+                                    <div style={{ fontWeight: 700, color: '#e2e8f0', marginBottom: 14, fontSize: 14 }}>
+                                        Top Expense Users
+                                    </div>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+                                        {topSpenders.map(s => (
+                                            <div key={s.id} style={{ background: '#161c2d', border: '1px solid #252d42', borderRadius: 8, padding: '10px 14px', minWidth: 170 }}>
+                                                <div style={{ color: '#94a3b8', fontSize: 12, fontWeight: 600 }}>{s.name}</div>
+                                                <div style={{ color: '#ef4444', fontSize: 20, fontWeight: 800, lineHeight: 1.2 }}>
+                                                    ₹{s.total.toLocaleString('en-IN')}
+                                                </div>
+                                                <div style={{ color: '#4a5980', fontSize: 11 }}>{s.count} expense{s.count !== 1 ? 's' : ''}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
 
                             {/* Plan breakdown */}
                             {Object.keys(planCount).length > 0 && (

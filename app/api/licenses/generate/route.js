@@ -8,10 +8,10 @@ export async function POST(req) {
     if (error) return NextResponse.json({ error }, { status });
 
     const { clientName, clientPhone, clientEmail, machineId,
-            plan, deviceLimit, customDays, notes, price, features,
-            businessCategory, website, validationException } = await req.json();
+            plan, deviceLimit, customDays, notes, price, discountedPrice, features,
+            businessCategory, website } = await req.json();
 
-    const DEFAULT_FEATURES = { mobile: true, trustBuilder: true, autoReply: true, chatbot: true, aiAutomation: true, liveChat: true, groupGrabber: true };
+    const DEFAULT_FEATURES = { mobile: true, trustBuilder: true, autoReply: true, chatbot: true, liveChat: true, groupGrabber: true };
 
     if (!machineId?.trim() || !plan || !clientName?.trim())
         return NextResponse.json({ error: 'clientName, machineId and plan are required' }, { status: 400 });
@@ -20,7 +20,12 @@ export async function POST(req) {
     const expiryTs = planToExpiry(plan, customDays);
     const isLifetime = plan === 'lifetime';
     const key = generateKey({ machineId: machineId.trim().toUpperCase(), expiryTs, deviceLimit: dl });
-    const priceNum = parseFloat(price) || 0;
+    const priceNum = Math.max(0, parseFloat(price) || 0);
+    const discountedNumRaw = discountedPrice === '' || discountedPrice === undefined || discountedPrice === null
+        ? priceNum
+        : Math.max(0, parseFloat(discountedPrice) || 0);
+    const discountedNum = Math.min(priceNum, discountedNumRaw);
+    const discountAmount = Math.max(0, priceNum - discountedNum);
 
     const license = {
         key,
@@ -29,6 +34,8 @@ export async function POST(req) {
         expiryTs,
         isLifetime,
         price:        priceNum,
+        discountedPrice: discountedNum,
+        discountAmount,
         machineId:    machineId.trim().toUpperCase(),
         clientName:   clientName.trim(),
         clientPhone:      (clientPhone || '').trim(),
@@ -37,8 +44,6 @@ export async function POST(req) {
         website:          (website || '').trim() || 'No website',
         notes:            (notes || '').trim(),
         features:     features || DEFAULT_FEATURES,
-        validationException: session.role === 'super' && validationException === true,
-        exceptionBoundMachineId: null,
         issuedBy:     session.sub,
         issuedByName: session.username,
         issuedAt:     Math.floor(Date.now() / 1000),

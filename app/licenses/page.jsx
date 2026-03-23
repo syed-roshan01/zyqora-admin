@@ -19,19 +19,17 @@ const FEATURE_OPTIONS = [
     { key: 'trustBuilder', label: 'Trust Builder',   sub: 'Account warming'   },
     { key: 'autoReply',    label: 'Auto Reply',      sub: 'Auto responses'    },
     { key: 'chatbot',      label: 'Chatbot Flows',   sub: 'Flow builder'      },
-    { key: 'aiAutomation', label: 'AI Automation',   sub: 'AI bot assistant'  },
     { key: 'liveChat',     label: 'Live Chat',       sub: 'Real-time chat'    },
     { key: 'groupGrabber', label: 'Group Grabber',   sub: 'Extract groups'    },
 ];
 
-const DEFAULT_FEATURES = { mobile: true, trustBuilder: true, autoReply: true, chatbot: true, aiAutomation: true, liveChat: true, groupGrabber: true };
+const DEFAULT_FEATURES = { mobile: true, trustBuilder: true, autoReply: true, chatbot: true, liveChat: true, groupGrabber: true };
 
 const DEFAULT_FORM = {
     clientName: '', clientPhone: '', clientEmail: '',
     businessCategory: '', website: '',
     machineId: '', plan: 'monthly', deviceLimit: '1',
-    customDays: '', notes: '', price: '',
-    validationException: false,
+    customDays: '', notes: '', price: '', discountedPrice: '',
     features: { ...DEFAULT_FEATURES },
 };
 
@@ -40,9 +38,77 @@ function fmtDate(ts) {
     return new Date(ts * 1000).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
+function toAmountNumber(v) {
+    const raw = String(v ?? '').trim();
+    if (!raw) return 0;
+
+    const normalized = raw.replace(/,/g, '');
+    const num = Number(normalized);
+    if (Number.isFinite(num)) return num;
+
+    const fallback = parseFloat(normalized.replace(/[^0-9.-]/g, ''));
+    return Number.isFinite(fallback) ? fallback : 0;
+}
+
+function amountPlain(v) {
+    const n = toAmountNumber(v);
+    if (!Number.isFinite(n)) return '0';
+
+    // Use fullwide conversion first to avoid exponent notation for very large values.
+    let plain = n.toLocaleString('fullwide', {
+        useGrouping: false,
+        maximumFractionDigits: 20,
+    });
+
+    if (plain.includes('e') || plain.includes('E')) {
+        plain = Number(n).toFixed(2);
+    }
+
+    if (plain.includes('.')) {
+        plain = plain.replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
+    }
+    return plain;
+}
+
+function fmtMoney(v) {
+    const amount = Number(amountPlain(v));
+    const formatted = new Intl.NumberFormat('en-IN', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2,
+        notation: 'standard',
+        useGrouping: true,
+    }).format(amount);
+    return `INR ${formatted}`;
+}
+
+async function loadImageAsDataUrl(path) {
+    const res = await fetch(path);
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.readAsDataURL(blob);
+    });
+}
+
 function getDaysLeft(l) {
     if (l.isLifetime) return null;
     return Math.floor((l.expiryTs - Math.floor(Date.now() / 1000)) / 86400);
+}
+
+function csvEscape(value) {
+    const s = String(value ?? '');
+    if (s.includes('"') || s.includes(',') || s.includes('\n')) {
+        return `"${s.replace(/"/g, '""')}"`;
+    }
+    return s;
+}
+
+function getLicenseStatus(l, nowTs) {
+    if (l.revoked) return 'Revoked';
+    if (!l.isLifetime && (l.expiryTs || 0) <= nowTs) return 'Expired';
+    return 'Active';
 }
 
 export default function LicensesPage() {
@@ -55,18 +121,21 @@ export default function LicensesPage() {
     const [genBusy,  setGenBusy]  = useState(false);
     const [genErr,   setGenErr]   = useState('');
     const [genKey,   setGenKey]   = useState('');
+    const [generatedLicense, setGeneratedLicense] = useState(null);
+    const [invoiceBusy, setInvoiceBusy] = useState(false);
     const [showRev,  setShowRev]  = useState(null); // key to revoke
     const [revReason,setRevReason]= useState('');
     const [revBusy,  setRevBusy]  = useState(false);
     const [copied,   setCopied]   = useState('');
-    const [issuedByFilter, setIssuedByFilter] = useState('');
     const [showDel,  setShowDel]  = useState(null); // { key, clientName }
     const [delBusy,  setDelBusy]  = useState(false);
     const [showDetail,setShowDetail]= useState(null);   // license object
     const [showEdit,  setShowEdit]  = useState(null);   // license object
-    const [editForm,  setEditForm]  = useState({ clientName: '', clientPhone: '', clientEmail: '', businessCategory: '', website: '', price: '', notes: '', features: { ...DEFAULT_FEATURES }, validationException: false });
+    const [editForm,  setEditForm]  = useState({ clientName: '', clientPhone: '', clientEmail: '', businessCategory: '', website: '', price: '', notes: '', features: { ...DEFAULT_FEATURES } });
     const [editBusy,  setEditBusy]  = useState(false);
     const [editErr,   setEditErr]   = useState('');
+    const [exportFormat, setExportFormat] = useState('csv');
+    const [exportBusy, setExportBusy] = useState(false);
 
     const load = async () => {
         setLoading(true);
@@ -80,18 +149,21 @@ export default function LicensesPage() {
         load();
     }, []);
 
-    // Unique admins for filter dropdown
-    const adminOptions = [...new Set(licenses.map(l => l.issuedByName).filter(Boolean))].sort();
-
     const filtered = licenses.filter(l => {
         const q = search.toLowerCase();
-        const matchesSearch = !q || l.clientName?.toLowerCase().includes(q) ||
+        return !q || l.clientName?.toLowerCase().includes(q) ||
                l.key.toLowerCase().includes(q) ||
                l.clientPhone?.toLowerCase().includes(q) ||
                l.machineId?.toLowerCase().includes(q);
-        const matchesAdmin = !issuedByFilter || l.issuedByName === issuedByFilter;
-        return matchesSearch && matchesAdmin;
     });
+
+    const formPrice = toAmountNumber(form.price);
+    const formDiscounted = form.discountedPrice === ''
+        ? formPrice
+        : Math.min(formPrice, toAmountNumber(form.discountedPrice));
+    const formDiscount = Math.max(0, formPrice - formDiscounted);
+    const formDiscountPercent = formPrice > 0 ? (formDiscount / formPrice) * 100 : 0;
+    const formDiscountPercentRounded = Math.round(formDiscountPercent);
 
     const copyKey = (key) => {
         navigator.clipboard.writeText(key);
@@ -107,8 +179,192 @@ export default function LicensesPage() {
         if (!r) return;
         if (!r.ok) { setGenErr(r.data.error || 'Failed'); setGenBusy(false); return; }
         setGenKey(r.data.key);
+        setGeneratedLicense(r.data.license || null);
         setGenBusy(false);
         load();
+    };
+
+    const downloadInvoiceForLicense = async (license) => {
+        if (!license) return;
+        setInvoiceBusy(true);
+        try {
+            const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+                import('jspdf'),
+                import('jspdf-autotable'),
+            ]);
+
+            const l = license;
+            const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+            const pageWidth = doc.internal.pageSize.getWidth();
+            const pageHeight = doc.internal.pageSize.getHeight();
+
+            const logo = await loadImageAsDataUrl('/favicon_io/android-chrome-192x192.png').catch(() => null);
+            const issuedDate = fmtDate(l.issuedAt);
+            const dueDate = l.isLifetime ? 'Lifetime' : fmtDate(l.expiryTs);
+            const invoiceId = `INV-${String(l.key || '').slice(0, 8)}`;
+            const baseAmount = toAmountNumber(l.price);
+            const paidAmount = Math.min(baseAmount, toAmountNumber(l.discountedPrice ?? l.price));
+            const discountAmount = Math.max(0, baseAmount - paidAmount);
+            const hasDiscount = discountAmount > 0;
+            const discountPercent = baseAmount > 0 ? (discountAmount / baseAmount) * 100 : 0;
+            const discountPercentRounded = Math.round(discountPercent);
+            const subtotalAmount = fmtMoney(baseAmount);
+            const discountPercentText = `${discountPercentRounded}%`;
+            const totalAmount = fmtMoney(paidAmount);
+            const activeFeatures = FEATURE_OPTIONS
+                .filter(f => (l.features ? l.features[f.key] !== false : true))
+                .map(f => f.label)
+                .join(', ') || '-';
+
+            // Header band
+            doc.setFillColor(12, 36, 74);
+            doc.rect(0, 0, pageWidth, 100, 'F');
+            doc.setFillColor(14, 116, 144);
+            doc.rect(0, 92, pageWidth, 8, 'F');
+
+            if (logo) {
+                doc.addImage(logo, 'PNG', 40, 20, 48, 48);
+            }
+
+            doc.setTextColor(255, 255, 255);
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(24);
+            doc.text('ZYQORA', 96, 44);
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(10);
+            doc.text('License Activation Invoice', 96, 63);
+
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(14);
+            doc.text('INVOICE', pageWidth - 130, 38);
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(10);
+            doc.text(`Invoice #: ${invoiceId}`, pageWidth - 200, 56);
+            doc.text(`Date: ${new Date().toLocaleDateString('en-IN')}`, pageWidth - 200, 72);
+            doc.text(`Issued: ${issuedDate}`, pageWidth - 200, 88);
+
+            doc.setFillColor(245, 247, 251);
+            doc.rect(40, 118, pageWidth - 80, 84, 'F');
+
+            doc.setTextColor(30, 41, 59);
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(11);
+            doc.text('Bill To', 52, 138);
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(10);
+            doc.text(`Client: ${l.clientName || '-'}`, 52, 156);
+            doc.text(`Phone: ${l.clientPhone || '-'}`, 52, 172);
+            doc.text(`Email: ${l.clientEmail || '-'}`, 52, 188);
+
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(11);
+            doc.text('Account Details', pageWidth - 250, 138);
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(10);
+            doc.text(`Issued By: ${l.issuedByName || '-'}`, pageWidth - 250, 156);
+            doc.text(`Business: ${l.businessCategory || '-'}`, pageWidth - 250, 172);
+            doc.text(`Website: ${l.website || 'No website'}`, pageWidth - 250, 188);
+
+            autoTable(doc, {
+                startY: 224,
+                head: [['Description', 'Details', 'Amount']],
+                body: [
+                    ['Product', 'Zyqora Software License Activation', subtotalAmount],
+                    ['Plan', String(l.plan || '-').toUpperCase(), ''],
+                    ['Validity', `${issuedDate} to ${dueDate}`, ''],
+                    ['Device Limit', String(l.deviceLimit || 1), ''],
+                    ['License Key', l.key || '-', ''],
+                    ['Machine ID', l.machineId || '-', ''],
+                    ['Features Included', activeFeatures, ''],
+                    ...(hasDiscount ? [['Discounted Price', 'Final payable amount after discount', totalAmount]] : []),
+                ],
+                theme: 'grid',
+                styles: { fontSize: 9.5, cellPadding: 7, textColor: [30, 41, 59] },
+                headStyles: { fillColor: [12, 36, 74], textColor: [255, 255, 255], fontStyle: 'bold' },
+                columnStyles: {
+                    0: { cellWidth: 130, fontStyle: 'bold' },
+                    1: { cellWidth: 330 },
+                    2: { cellWidth: 80, halign: 'right', fontStyle: 'bold' },
+                },
+            });
+
+            let finalY = doc.lastAutoTable?.finalY || 450;
+            doc.setDrawColor(226, 232, 240);
+            doc.line(40, finalY + 24, pageWidth - 40, finalY + 24);
+
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(12);
+            doc.text('Subtotal', pageWidth - 200, finalY + 46);
+            doc.text(subtotalAmount, pageWidth - 60, finalY + 46, { align: 'right' });
+
+            let totalY = finalY + 68;
+            if (hasDiscount) {
+                doc.setFontSize(10);
+                doc.setFont('helvetica', 'normal');
+                doc.text('Discount', pageWidth - 200, finalY + 62);
+                doc.text(discountPercentText, pageWidth - 60, finalY + 62, { align: 'right' });
+                totalY = finalY + 84;
+            }
+
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(13);
+            doc.text('Total Amount', pageWidth - 200, totalY);
+            doc.text(totalAmount, pageWidth - 60, totalY, { align: 'right' });
+
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(9.5);
+            doc.setTextColor(71, 85, 105);
+            const note = l.notes ? `Note: ${l.notes}` : 'Note: This invoice confirms successful license issuance for the above client.';
+            doc.text(note, 40, finalY + 48, { maxWidth: 320 });
+
+            finalY += 108;
+            if (finalY > pageHeight - 180) {
+                doc.addPage();
+                finalY = 60;
+            }
+
+            doc.setFillColor(240, 249, 255);
+            doc.rect(40, finalY, pageWidth - 80, 158, 'F');
+            doc.setDrawColor(14, 116, 144);
+            doc.rect(40, finalY, pageWidth - 80, 158);
+
+            doc.setTextColor(3, 105, 161);
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(11);
+            doc.text('Terms and Conditions', 52, finalY + 22);
+
+            doc.setTextColor(71, 85, 105);
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(9.2);
+            const terms = [
+                'For assistance, please contact Zyqora Support at +91 92177 58442.',
+                'Complimentary support is available for 3 days from the date of license activation.',
+                'Extended monthly support can be opted for through an additional paid support plan.',
+                'Each successful referral qualifies for a one-month extension to the active plan, subject to verification by Zyqora.',
+                'Zyqora includes anti-ban safeguards; use Trust Builder and the safest sending methods before scaling campaigns.',
+                'All templates and outbound messages must comply with Meta and WhatsApp policy guidelines.',
+                'Avoid spam or abusive outreach; repeated user reports can lead to temporary or permanent account restrictions.',
+                'Zyqora is not liable for any number blocking, limitations, or bans imposed by WhatsApp or Meta.'
+            ];
+            doc.text(terms.map((t, i) => `${i + 1}. ${t}`).join('\n'), 52, finalY + 40, { maxWidth: pageWidth - 104, lineHeightFactor: 1.5 });
+
+            doc.setFillColor(248, 250, 252);
+            doc.rect(0, pageHeight - 54, pageWidth, 54, 'F');
+            doc.setTextColor(100, 116, 139);
+            doc.setFontSize(9);
+            doc.text('Zyqora Support: +91 92177 58442', 40, pageHeight - 32);
+            doc.text('Thank you for choosing Zyqora.', pageWidth - 40, pageHeight - 32, { align: 'right' });
+            doc.text('This is a system-generated invoice and does not require a signature.', 40, pageHeight - 18);
+
+            const safeName = (l.clientName || 'client').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+            doc.save(`zyqora-invoice-${safeName || 'client'}-${new Date().toISOString().slice(0, 10)}.pdf`);
+        } finally {
+            setInvoiceBusy(false);
+        }
+    };
+
+    const downloadGeneratedInvoice = async () => {
+        await downloadInvoiceForLicense(generatedLicense);
     };
 
     const revoke = async () => {
@@ -129,11 +385,153 @@ export default function LicensesPage() {
         e.preventDefault();
         setEditBusy(true);
         setEditErr('');
-        const r = await apiFetch('/api/licenses/update', { method: 'POST', body: { key: showEdit.key, clientName: editForm.clientName, clientPhone: editForm.clientPhone, clientEmail: editForm.clientEmail, businessCategory: editForm.businessCategory, website: editForm.website, price: editForm.price, notes: editForm.notes, features: editForm.features, validationException: !!editForm.validationException } });
+        const r = await apiFetch('/api/licenses/update', { method: 'POST', body: { key: showEdit.key, clientName: editForm.clientName, clientPhone: editForm.clientPhone, clientEmail: editForm.clientEmail, businessCategory: editForm.businessCategory, website: editForm.website, price: editForm.price, notes: editForm.notes, features: editForm.features } });
         if (!r?.ok) { setEditErr(r?.data?.error || 'Failed to update'); setEditBusy(false); return; }
         setShowEdit(null);
         setEditBusy(false);
         load();
+    };
+
+    const downloadCsv = () => {
+        const nowTs = Math.floor(Date.now() / 1000);
+        const headers = [
+            'Client Name', 'Phone', 'Email', 'Business Category', 'Website',
+            'Plan', 'Price', 'Discounted Price', 'Discount Amount', 'Device Limit', 'Machine ID', 'Key',
+            'Issued By', 'Issued At', 'Expiry', 'Status',
+            'Revoked By', 'Revoked At', 'Revoked Reason',
+            'Features', 'Notes'
+        ];
+
+        const rows = licenses.map(l => {
+            const features = FEATURE_OPTIONS
+                .filter(f => (l.features ? l.features[f.key] !== false : true))
+                .map(f => f.label)
+                .join(' | ');
+
+            return [
+                l.clientName || '',
+                l.clientPhone || '',
+                l.clientEmail || '',
+                l.businessCategory || '',
+                l.website || '',
+                l.plan || '',
+                toAmountNumber(l.price),
+                toAmountNumber(l.discountedPrice ?? l.price),
+                Math.max(0, toAmountNumber(l.price) - toAmountNumber(l.discountedPrice ?? l.price)),
+                l.deviceLimit || 1,
+                l.machineId || '',
+                l.key || '',
+                l.issuedByName || '',
+                fmtDate(l.issuedAt),
+                l.isLifetime ? 'Lifetime' : fmtDate(l.expiryTs),
+                getLicenseStatus(l, nowTs),
+                l.revokedByName || '',
+                l.revokedAt ? fmtDate(l.revokedAt) : '',
+                l.revokedReason || '',
+                features,
+                l.notes || '',
+            ].map(csvEscape).join(',');
+        });
+
+        const csv = [headers.join(','), ...rows].join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const stamp = new Date().toISOString().slice(0, 10);
+        a.href = url;
+        a.download = `licenses-full-${stamp}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    };
+
+    const downloadPdf = async () => {
+        const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+            import('jspdf'),
+            import('jspdf-autotable'),
+        ]);
+
+        const nowTs = Math.floor(Date.now() / 1000);
+        const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+        doc.setFontSize(14);
+        doc.text('Zyqora Licenses - Full Export', 36, 30);
+        doc.setFontSize(10);
+        doc.text(`Generated: ${new Date().toLocaleString('en-IN')}`, 36, 48);
+
+        const body = licenses.map((l) => {
+            const features = FEATURE_OPTIONS
+                .filter(f => (l.features ? l.features[f.key] !== false : true))
+                .map(f => f.label)
+                .join(', ');
+
+            const details = [
+                `Phone: ${l.clientPhone || '-'}`,
+                `Email: ${l.clientEmail || '-'}`,
+                `Category: ${l.businessCategory || '-'}`,
+                `Website: ${l.website || '-'}`,
+                `Machine: ${l.machineId || '-'}`,
+                `Key: ${l.key || '-'}`,
+                `Features: ${features || '-'}`,
+                `Notes: ${l.notes || '-'}`,
+            ].join('\n');
+
+            return [
+                l.clientName || '-',
+                l.plan || '-',
+                fmtMoney(l.discountedPrice ?? l.price),
+                l.deviceLimit || 1,
+                l.issuedByName || '-',
+                fmtDate(l.issuedAt),
+                l.isLifetime ? 'Lifetime' : fmtDate(l.expiryTs),
+                getLicenseStatus(l, nowTs),
+                details,
+            ];
+        });
+
+        autoTable(doc, {
+            startY: 60,
+            head: [[
+                'Client', 'Plan', 'Price', 'Devices', 'Issued By',
+                'Issued At', 'Expiry', 'Status', 'Details'
+            ]],
+            body,
+            styles: { fontSize: 8, cellPadding: 3, valign: 'top' },
+            headStyles: { fillColor: [124, 58, 237] },
+            columnStyles: {
+                0: { cellWidth: 85 },
+                1: { cellWidth: 50 },
+                2: { cellWidth: 52 },
+                3: { cellWidth: 40 },
+                4: { cellWidth: 68 },
+                5: { cellWidth: 58 },
+                6: { cellWidth: 58 },
+                7: { cellWidth: 48 },
+                8: { cellWidth: 250 },
+            },
+            didDrawPage: (data) => {
+                const pageNo = doc.getNumberOfPages();
+                doc.setFontSize(8);
+                doc.text(`Page ${pageNo}`, data.settings.margin.left, doc.internal.pageSize.height - 12);
+            },
+        });
+
+        const stamp = new Date().toISOString().slice(0, 10);
+        doc.save(`licenses-full-${stamp}.pdf`);
+    };
+
+    const downloadLicenses = async () => {
+        if (!licenses.length) return;
+        setExportBusy(true);
+        try {
+            if (exportFormat === 'pdf') {
+                await downloadPdf();
+            } else {
+                downloadCsv();
+            }
+        } finally {
+            setExportBusy(false);
+        }
     };
 
     const now = Math.floor(Date.now() / 1000);
@@ -146,45 +544,41 @@ export default function LicensesPage() {
                         <div className="page-title">Licenses</div>
                         <div className="page-subtitle">{licenses.length} total issued</div>
                     </div>
-                    <button className="btn btn-primary" onClick={() => { setShowGen(true); setGenKey(''); setForm(DEFAULT_FORM); }}>
-                        + Generate Key
-                    </button>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <select
+                            className="form-select"
+                            style={{ width: 120 }}
+                            value={exportFormat}
+                            onChange={e => setExportFormat(e.target.value)}
+                        >
+                            <option value="csv">CSV</option>
+                            <option value="pdf">PDF</option>
+                        </select>
+                        <button
+                            className="btn btn-ghost"
+                            onClick={downloadLicenses}
+                            disabled={exportBusy || licenses.length === 0}
+                            title={licenses.length === 0 ? 'No licenses to export' : 'Download full license data'}
+                        >
+                            {exportBusy ? 'Preparing…' : 'Download'}
+                        </button>
+                        <button className="btn btn-primary" onClick={() => { setShowGen(true); setGenKey(''); setGeneratedLicense(null); setForm(DEFAULT_FORM); }}>
+                            + Generate Key
+                        </button>
+                    </div>
                 </div>
 
                 <div className="page-body">
-                    {/* Search + Admin filter (superadmin only) */}
-                    <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-                        <div className="search-bar" style={{ flex: 1, minWidth: 220, marginBottom: 0 }}>
-                            <input
-                                className="form-input search-input"
-                                placeholder="Search by client, key, phone or machine ID…"
-                                value={search}
-                                onChange={e => setSearch(e.target.value)}
-                            />
-                            {search && (
-                                <button className="btn btn-ghost btn-sm" onClick={() => setSearch('')}>Clear</button>
-                            )}
-                        </div>
-                        {user?.role === 'super' && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <label style={{ fontSize: 12, color: '#4a5980', whiteSpace: 'nowrap', fontWeight: 600 }}>Issued By:</label>
-                                <select
-                                    className="form-input"
-                                    style={{ minWidth: 160, padding: '8px 12px', fontSize: 13 }}
-                                    value={issuedByFilter}
-                                    onChange={e => setIssuedByFilter(e.target.value)}
-                                >
-                                    <option value="">All Admins ({licenses.length})</option>
-                                    {adminOptions.map(name => (
-                                        <option key={name} value={name}>
-                                            {name} ({licenses.filter(l => l.issuedByName === name).length})
-                                        </option>
-                                    ))}
-                                </select>
-                                {issuedByFilter && (
-                                    <button className="btn btn-ghost btn-sm" onClick={() => setIssuedByFilter('')}>✕</button>
-                                )}
-                            </div>
+                    {/* Search */}
+                    <div className="search-bar" style={{ marginBottom: 16 }}>
+                        <input
+                            className="form-input search-input"
+                            placeholder="Search by client, key, phone or machine ID…"
+                            value={search}
+                            onChange={e => setSearch(e.target.value)}
+                        />
+                        {search && (
+                            <button className="btn btn-ghost btn-sm" onClick={() => setSearch('')}>Clear</button>
                         )}
                     </div>
 
@@ -253,7 +647,7 @@ export default function LicensesPage() {
                                                 <div style={{ display: 'flex', gap: 6 }}>
                                                     <button
                                                         className="btn btn-ghost btn-sm"
-                                                        onClick={() => { setShowEdit(l); setEditForm({ clientName: l.clientName || '', clientPhone: l.clientPhone || '', clientEmail: l.clientEmail || '', businessCategory: l.businessCategory || '', website: l.website || '', price: l.price ?? '', notes: l.notes || '', features: { ...DEFAULT_FEATURES, ...(l.features || {}) }, validationException: !!l.validationException }); setEditErr(''); }}
+                                                        onClick={() => { setShowEdit(l); setEditForm({ clientName: l.clientName || '', clientPhone: l.clientPhone || '', clientEmail: l.clientEmail || '', businessCategory: l.businessCategory || '', website: l.website || '', price: l.price ?? '', notes: l.notes || '', features: { ...DEFAULT_FEATURES, ...(l.features || {}) } }); setEditErr(''); }}
                                                         title="Edit price & notes"
                                                     >✎</button>
                                                     {!l.revoked && (
@@ -309,7 +703,15 @@ export default function LicensesPage() {
                                 <button
                                     className="btn btn-ghost"
                                     style={{ width: '100%' }}
-                                    onClick={() => { setGenKey(''); setForm(DEFAULT_FORM); }}
+                                    onClick={downloadGeneratedInvoice}
+                                    disabled={!generatedLicense || invoiceBusy}
+                                >
+                                    {invoiceBusy ? 'Preparing Invoice…' : 'Download Invoice (PDF)'}
+                                </button>
+                                <button
+                                    className="btn btn-ghost"
+                                    style={{ width: '100%' }}
+                                    onClick={() => { setGenKey(''); setGeneratedLicense(null); setForm(DEFAULT_FORM); }}
                                 >
                                     Generate Another
                                 </button>
@@ -354,23 +756,6 @@ export default function LicensesPage() {
                                             style={{ fontFamily: 'Courier New, monospace', fontSize: 12 }} />
                                         <span style={{ fontSize: 11, color: '#3a4560' }}>Found in the Zyqora desktop app → License screen → bottom</span>
                                     </div>
-                                    {user?.role === 'super' && (
-                                        <div className="form-group" style={{ marginTop: 2 }}>
-                                            <label className="form-label" style={{ marginBottom: 8 }}>Validation Handling (Super Admin)</label>
-                                            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', padding: '10px 12px', borderRadius: 8, border: '1px solid', borderColor: form.validationException ? 'rgba(245,158,11,.5)' : '#252d42', background: form.validationException ? 'rgba(245,158,11,.08)' : 'transparent' }}>
-                                                <input
-                                                    type="checkbox"
-                                                    checked={!!form.validationException}
-                                                    onChange={e => setForm(f => ({ ...f, validationException: e.target.checked }))}
-                                                    style={{ accentColor: '#f59e0b', width: 14, height: 14, marginTop: 2, flexShrink: 0 }}
-                                                />
-                                                <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                                                    <span style={{ fontSize: 12.5, fontWeight: 600, color: '#e2e8f0' }}>Create as validation-exception license</span>
-                                                    <span style={{ fontSize: 11, color: '#94a3b8' }}>Only use if client has machine-ID mismatch issues. This applies only to this license.</span>
-                                                </span>
-                                            </label>
-                                        </div>
-                                    )}
                                     <div className="form-row">
                                         <div className="form-group">
                                             <label className="form-label">Plan *</label>
@@ -398,6 +783,14 @@ export default function LicensesPage() {
                                             <input className="form-input" type="number" min="0" step="0.01" value={form.price}
                                                 onChange={e => setForm(f => ({ ...f, price: e.target.value }))}
                                                 placeholder="e.g. 999" />
+                                            <label className="form-label" style={{ marginTop: 8 }}>Discounted Price (₹)</label>
+                                            <input className="form-input" type="number" min="0" step="0.01" value={form.discountedPrice}
+                                                onChange={e => setForm(f => ({ ...f, discountedPrice: e.target.value }))}
+                                                placeholder="Leave blank for no discount" />
+                                            <span style={{ fontSize: 11, color: '#4a5980', marginTop: 6 }}>
+                                                Auto Discount: <span style={{ color: '#22c55e', fontWeight: 700 }}>{fmtMoney(formDiscount)}</span>
+                                                <span style={{ color: '#4a9eff', fontWeight: 700 }}> ({formDiscountPercentRounded}%)</span>
+                                            </span>
                                         </div>
                                         <div className="form-group">
                                             <label className="form-label">Notes</label>
@@ -547,7 +940,17 @@ export default function LicensesPage() {
                                 </div>
                                 <div>
                                     <div style={{ fontSize: 10, color: '#4a5980', fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Price</div>
-                                    <div style={{ fontSize: 13, color: '#e2e8f0' }}>₹{showDetail.price || 0}</div>
+                                    <div style={{ fontSize: 13, color: '#e2e8f0' }}>{fmtMoney(showDetail.price)}</div>
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: 10, color: '#4a5980', fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Discounted Price</div>
+                                    <div style={{ fontSize: 13, color: '#22c55e' }}>{fmtMoney(showDetail.discountedPrice ?? showDetail.price)}</div>
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: 10, color: '#4a5980', fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Discount</div>
+                                    <div style={{ fontSize: 13, color: '#f59e0b' }}>
+                                        {fmtMoney(Math.max(0, toAmountNumber(showDetail.price) - toAmountNumber(showDetail.discountedPrice ?? showDetail.price)))}
+                                    </div>
                                 </div>
                                 <div>
                                     <div style={{ fontSize: 10, color: '#4a5980', fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Issued By</div>
@@ -564,12 +967,6 @@ export default function LicensesPage() {
                                 <div>
                                     <div style={{ fontSize: 10, color: '#4a5980', fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Status</div>
                                     <div>{showDetail.revoked ? <span className="badge badge-revoked">Revoked</span> : (() => { const d = getDaysLeft(showDetail); return (!showDetail.isLifetime && d !== null && d < 0) ? <span className="badge badge-expired">Expired</span> : <span className="badge badge-active">Active</span>; })()}</div>
-                                </div>
-                                <div>
-                                    <div style={{ fontSize: 10, color: '#4a5980', fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Validation Exception</div>
-                                    <div style={{ fontSize: 13, color: showDetail.validationException ? '#f59e0b' : '#94a3b8' }}>
-                                        {showDetail.validationException ? 'Enabled (super-admin only)' : 'Disabled'}
-                                    </div>
                                 </div>
                                 <div style={{ gridColumn: 'span 2' }}>
                                     <div style={{ fontSize: 10, color: '#4a5980', fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Machine ID</div>
@@ -614,7 +1011,10 @@ export default function LicensesPage() {
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-ghost" onClick={() => setShowDetail(null)}>Close</button>
-                            <button className="btn btn-primary" onClick={() => { setShowEdit(showDetail); setEditForm({ clientName: showDetail.clientName || '', clientPhone: showDetail.clientPhone || '', clientEmail: showDetail.clientEmail || '', businessCategory: showDetail.businessCategory || '', website: showDetail.website || '', price: showDetail.price ?? '', notes: showDetail.notes || '', features: { ...DEFAULT_FEATURES, ...(showDetail.features || {}) }, validationException: !!showDetail.validationException }); setEditErr(''); setShowDetail(null); }}>✎ Edit</button>
+                            <button className="btn btn-ghost" onClick={() => downloadInvoiceForLicense(showDetail)} disabled={invoiceBusy}>
+                                {invoiceBusy ? 'Preparing Invoice…' : 'Download Invoice'}
+                            </button>
+                            <button className="btn btn-primary" onClick={() => { setShowEdit(showDetail); setEditForm({ clientName: showDetail.clientName || '', clientPhone: showDetail.clientPhone || '', clientEmail: showDetail.clientEmail || '', price: showDetail.price ?? '', notes: showDetail.notes || '', features: { ...DEFAULT_FEATURES, ...(showDetail.features || {}) } }); setEditErr(''); setShowDetail(null); }}>✎ Edit</button>
                         </div>
                     </div>
                 </div>
@@ -689,23 +1089,6 @@ export default function LicensesPage() {
                                         ))}
                                     </div>
                                 </div>
-                                {user?.role === 'super' && (
-                                    <div className="form-group" style={{ marginTop: 4 }}>
-                                        <label className="form-label" style={{ marginBottom: 8 }}>Validation Handling (Super Admin)</label>
-                                        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', padding: '10px 12px', borderRadius: 8, border: '1px solid', borderColor: editForm.validationException ? 'rgba(245,158,11,.5)' : '#252d42', background: editForm.validationException ? 'rgba(245,158,11,.08)' : 'transparent' }}>
-                                            <input
-                                                type="checkbox"
-                                                checked={!!editForm.validationException}
-                                                onChange={e => setEditForm(f => ({ ...f, validationException: e.target.checked }))}
-                                                style={{ accentColor: '#f59e0b', width: 14, height: 14, marginTop: 2, flexShrink: 0 }}
-                                            />
-                                            <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                                                <span style={{ fontSize: 12.5, fontWeight: 600, color: '#e2e8f0' }}>Enable validation exception for this license</span>
-                                                <span style={{ fontSize: 11, color: '#94a3b8' }}>Use only if client faces machine-ID mismatch issues. This does not apply globally.</span>
-                                            </span>
-                                        </label>
-                                    </div>
-                                )}
                                 {editErr && <div className="form-error">{editErr}</div>}
                             </div>
                             <div className="modal-footer">
