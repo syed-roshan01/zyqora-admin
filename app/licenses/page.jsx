@@ -21,9 +21,10 @@ const FEATURE_OPTIONS = [
     { key: 'chatbot',      label: 'Chatbot Flows',   sub: 'Flow builder'      },
     { key: 'liveChat',     label: 'Live Chat',       sub: 'Real-time chat'    },
     { key: 'groupGrabber', label: 'Group Grabber',   sub: 'Extract groups'    },
+    { key: 'aiAutomation', label: 'AI Automation',   sub: 'AI-powered actions' },
 ];
 
-const DEFAULT_FEATURES = { mobile: true, trustBuilder: true, autoReply: true, chatbot: true, liveChat: true, groupGrabber: true };
+const DEFAULT_FEATURES = { mobile: true, trustBuilder: true, autoReply: true, chatbot: true, liveChat: true, groupGrabber: true, aiAutomation: true };
 
 const DEFAULT_FORM = {
     clientName: '', clientPhone: '', clientEmail: '',
