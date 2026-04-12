@@ -8,6 +8,11 @@ function fmtDate(ts) {
     return new Date(ts * 1000).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
+function fmtDateTime(ts) {
+    if (!ts) return '—';
+    return new Date(ts * 1000).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
 function fmtMoney(v) {
     const n = Math.max(0, parseFloat(v) || 0);
     return '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
@@ -25,6 +30,7 @@ export default function AffiliateDashboard() {
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [filterType, setFilterType] = useState('all'); // all | demo | converted
+    const [activeTab, setActiveTab] = useState('clients'); // clients | payments
 
     useEffect(() => {
         if (!getToken()) { router.replace('/login'); return; }
@@ -47,6 +53,7 @@ export default function AffiliateDashboard() {
     }, []);
 
     const { affiliate, stats, licenses } = data || {};
+    const payments = data?.payments || [];
 
     const filtered = useMemo(() => {
         let list = (licenses || []).filter(l => !l.revoked);
@@ -105,7 +112,7 @@ export default function AffiliateDashboard() {
 
             <div style={{ padding: '28px 32px', maxWidth: 1100, margin: '0 auto' }}>
                 {/* Stats */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 28 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16, marginBottom: 28 }}>
                     <div className="stat-card">
                         <div className="stat-label">Total Clients</div>
                         <div className="stat-value stat-accent">{stats?.totalClients ?? 0}</div>
@@ -127,15 +134,42 @@ export default function AffiliateDashboard() {
                         <div className="stat-sub">Sum of converted licenses</div>
                     </div>
                     <div className="stat-card" style={{ border: '1px solid rgba(124,58,237,.4)', background: 'rgba(124,58,237,.06)' }}>
-                        <div className="stat-label">Your Commission ({stats?.commissionPercent ?? 0}%)</div>
-                        <div className="stat-value" style={{ color: '#a78bfa', fontSize: 28 }}>
+                        <div className="stat-label">Commission Earned ({stats?.commissionPercent ?? 0}%)</div>
+                        <div className="stat-value" style={{ color: '#a78bfa', fontSize: 26 }}>
                             {fmtMoney(stats?.commissionAmount ?? 0)}
                         </div>
                         <div className="stat-sub">Based on converted sales</div>
                     </div>
+                    <div className="stat-card" style={{ border: '1px solid rgba(34,197,94,.3)', background: 'rgba(34,197,94,.04)' }}>
+                        <div className="stat-label">Paid Out</div>
+                        <div className="stat-value stat-green" style={{ fontSize: 26 }}>
+                            {fmtMoney(stats?.totalPaid ?? 0)}
+                        </div>
+                        <div className="stat-sub">{payments.length} transaction{payments.length !== 1 ? 's' : ''}</div>
+                    </div>
+                    <div className="stat-card" style={{ border: '1px solid rgba(239,68,68,.3)', background: 'rgba(239,68,68,.04)' }}>
+                        <div className="stat-label">Balance Owed to You</div>
+                        <div className="stat-value" style={{ color: (stats?.balance ?? 0) > 0 ? '#ef4444' : '#3a4560', fontSize: 26 }}>
+                            {fmtMoney(stats?.balance ?? 0)}
+                        </div>
+                        <div className="stat-sub">Commission − paid out</div>
+                    </div>
                 </div>
 
-                {/* Table */}
+                {/* Tabs */}
+                <div style={{ display: 'flex', gap: 6, marginBottom: 18, borderBottom: '1px solid #1e2640', paddingBottom: 12 }}>
+                    {[['clients', `Leads (${stats?.totalClients ?? 0})`], ['payments', `Payment History (${payments.length})`]].map(([tab, label]) => (
+                        <button key={tab}
+                            className={`btn btn-sm ${activeTab === tab ? 'btn-primary' : 'btn-ghost'}`}
+                            onClick={() => setActiveTab(tab)}>
+                            {label}
+                        </button>
+                    ))}
+                </div>
+
+                {activeTab === 'clients' && (
+                <>
+                {/* Client filters */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
                     <input
                         className="form-input"
@@ -206,6 +240,39 @@ export default function AffiliateDashboard() {
                             </tbody>
                         </table>
                     </div>
+                )}
+                </>
+                )}
+
+                {activeTab === 'payments' && (
+                payments.length === 0 ? (
+                    <div className="empty">No payments received yet.</div>
+                ) : (
+                    <div className="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Amount</th>
+                                    <th>Note</th>
+                                    <th>Paid By</th>
+                                    <th>Date &amp; Time</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {payments.map((p, i) => (
+                                    <tr key={p.id}>
+                                        <td style={{ color: '#3a4560', fontSize: 12 }}>{i + 1}</td>
+                                        <td style={{ fontWeight: 800, color: '#22c55e', fontSize: 15 }}>{fmtMoney(p.amount)}</td>
+                                        <td style={{ color: '#94a3b8' }}>{p.note || '—'}</td>
+                                        <td style={{ fontSize: 12, color: '#64748b' }}>{p.paidByName || p.paidBy}</td>
+                                        <td style={{ fontSize: 12, color: '#64748b' }}>{fmtDateTime(p.paidAt)}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )
                 )}
             </div>
         </div>

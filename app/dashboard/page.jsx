@@ -19,6 +19,7 @@ export default function DashboardPage() {
     const [admins,   setAdmins]   = useState([]);
     const [sales,    setSales]    = useState([]);
     const [expenses, setExpenses] = useState([]);
+    const [affiliates, setAffiliates] = useState([]);
     const [user,     setUser]     = useState(null);
     const [loading,  setLoading]  = useState(true);
 
@@ -27,16 +28,18 @@ export default function DashboardPage() {
         if (cached) try { setUser(JSON.parse(cached)); } catch {}
 
         const loadData = async () => {
-            const [lRes, aRes, sRes, eRes] = await Promise.all([
+            const [lRes, aRes, sRes, eRes, affRes] = await Promise.all([
                 apiFetch('/api/licenses/list'),
                 apiFetch('/api/admins/list').catch(() => null),
                 apiFetch('/api/sales'),
                 apiFetch('/api/expenses'),
+                apiFetch('/api/affiliates/list').catch(() => null),
             ]);
             if (lRes?.ok) setLicenses(lRes.data);
             if (aRes?.ok) setAdmins(aRes.data);
             if (sRes?.ok) setSales(sRes.data);
             if (eRes?.ok) setExpenses(eRes.data);
+            if (affRes?.ok) setAffiliates(affRes.data || []);
             setLoading(false);
         };
         loadData();
@@ -64,11 +67,19 @@ export default function DashboardPage() {
         }, {})).sort((a, b) => b.total - a.total).slice(0, 5)
         : [];
 
-    // Affiliate commission amounts are stored per-license at issue/convert time
+    // Affiliate commission — use stored amount if available, else compute from affiliate % dynamically
+    const affCommPctMap = Object.fromEntries(affiliates.map(a => [a.id, a.commission || 0]));
     const affilCommissionTotal = user?.role === 'super'
         ? licenses
-            .filter(l => !l.revoked && (parseFloat(l.affiliateCommissionAmount) || 0) > 0)
-            .reduce((sum, l) => sum + (parseFloat(l.affiliateCommissionAmount) || 0), 0)
+            .filter(l => !l.revoked && l.affiliateId)
+            .reduce((sum, l) => {
+                const stored = parseFloat(l.affiliateCommissionAmount);
+                if (stored > 0) return sum + stored;
+                // fallback: compute dynamically
+                const revenue = parseFloat(l.discountedPrice ?? l.price) || 0;
+                const pct = affCommPctMap[l.affiliateId] || 0;
+                return sum + (revenue * pct / 100);
+            }, 0)
         : 0;
     const netAfterAffiliate = netMoney - affilCommissionTotal;
 

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth';
-import { listAllLicenses, getAffiliate } from '@/lib/kv';
+import { listAllLicenses, getAffiliate, listAffiliatePayments } from '@/lib/kv';
 
 export async function GET(req) {
     const { error, status, session } = await requireAuth(req);
@@ -16,9 +16,10 @@ export async function GET(req) {
         ? (searchParams.get('affiliateId') || session.sub)
         : session.sub;
 
-    const [affiliate, allLicenses] = await Promise.all([
+    const [affiliate, allLicenses, payments] = await Promise.all([
         getAffiliate(targetId),
         listAllLicenses(),
+        listAffiliatePayments(targetId),
     ]);
 
     if (!affiliate) return NextResponse.json({ error: 'Affiliate not found' }, { status: 404 });
@@ -55,6 +56,8 @@ export async function GET(req) {
     const convertedClients = result.filter(l => l.converted).length;
     const totalRevenue = result.filter(l => l.converted).reduce((s, l) => s + l.price, 0);
     const commissionAmount = totalRevenue * (affiliate.commission / 100);
+    const totalPaid = payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+    const balance = Math.max(0, commissionAmount - totalPaid);
 
     return NextResponse.json({
         affiliate: {
@@ -70,7 +73,10 @@ export async function GET(req) {
             totalRevenue,
             commissionAmount,
             commissionPercent: affiliate.commission,
+            totalPaid,
+            balance,
         },
         licenses: result,
+        payments,
     });
 }
