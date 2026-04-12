@@ -9,7 +9,9 @@ const ALL_NAV = [
     { href: '/licenses',  icon: '⚿',  label: 'Licenses'  },
     { href: '/sales',     icon: '₹',  label: 'Sales'     },
     { href: '/expenses',  icon: '₹-', label: 'Expenses'  },
-    { href: '/admins',    icon: '⊛',  label: 'Admins',    superOnly: true },
+    { href: '/admins',    icon: '⊛',  label: 'Admins',       superOnly: true },
+    { href: '/affiliates',icon: '◎',  label: 'Affiliates',   superOnly: true },
+    { href: '/logs',      icon: '☰',  label: 'Logs',         superOnly: true },
 ];
 
 export default function AppLayout({ children }) {

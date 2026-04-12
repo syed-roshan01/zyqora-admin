@@ -4,14 +4,15 @@ import AppLayout from '@/components/AppLayout';
 import { apiFetch } from '@/lib/apiFetch';
 
 const PLANS = [
-    { value: 'trial',    label: 'Trial (3 days)'      },
-    { value: 'weekly',   label: 'Weekly (7 days)'     },
-    { value: 'monthly',  label: 'Monthly (30 days)'   },
-    { value: '3months',  label: '3 Months (90 days)'  },
-    { value: '6months',  label: '6 Months (180 days)' },
-    { value: 'yearly',   label: 'Yearly (365 days)'   },
-    { value: 'lifetime', label: 'Lifetime'            },
-    { value: 'custom',   label: 'Custom days'         },
+    { value: 'trial1day', label: 'Trial (1 day)'         },
+    { value: 'trial',    label: 'Trial (3 days)'         },
+    { value: 'weekly',   label: 'Weekly (7 days)'        },
+    { value: 'monthly',  label: 'Monthly (30 days)'      },
+    { value: '3months',  label: '3 Months (90 days)'     },
+    { value: '6months',  label: '6 Months (180 days)'    },
+    { value: 'yearly',   label: 'Yearly (365 days)'      },
+    { value: 'lifetime', label: 'Lifetime'               },
+    { value: 'custom',   label: 'Custom days'            },
 ];
 
 const FEATURE_OPTIONS = [
@@ -32,6 +33,7 @@ const DEFAULT_FORM = {
     machineId: '', plan: 'monthly', deviceLimit: '1',
     customDays: '', notes: '', price: '', discountedPrice: '',
     features: { ...DEFAULT_FEATURES },
+    affiliateId: '', affiliateName: '',
 };
 
 function fmtDate(ts) {
@@ -137,6 +139,15 @@ export default function LicensesPage() {
     const [editErr,   setEditErr]   = useState('');
     const [exportFormat, setExportFormat] = useState('csv');
     const [exportBusy, setExportBusy] = useState(false);
+    const [affiliates, setAffiliates] = useState([]);
+
+    // Convert trial → paid
+    const [showConvert, setShowConvert] = useState(null); // original license object
+    const [convertForm, setConvertForm] = useState({ plan: 'monthly', deviceLimit: '1', customDays: '', price: '', discountedPrice: '', notes: '', features: { ...DEFAULT_FEATURES } });
+    const [convertBusy, setConvertBusy] = useState(false);
+    const [convertErr, setConvertErr] = useState('');
+    const [convertedKey, setConvertedKey] = useState('');
+    const [convertedLicense, setConvertedLicense] = useState(null);
 
     const load = async () => {
         setLoading(true);
@@ -148,9 +159,11 @@ export default function LicensesPage() {
     useEffect(() => {
         try { const u = localStorage.getItem('zyqora_admin_user'); if (u) setUser(JSON.parse(u)); } catch {}
         load();
+        apiFetch('/api/affiliates/list').then(r => { if (r?.ok) setAffiliates(r.data || []); });
     }, []);
 
     const filtered = licenses.filter(l => {
+        if (l.revoked && l.revokedReason?.startsWith('Converted to')) return false;
         const q = search.toLowerCase();
         return !q || l.clientName?.toLowerCase().includes(q) ||
                l.key.toLowerCase().includes(q) ||
@@ -382,6 +395,34 @@ export default function LicensesPage() {
         setDelBusy(false);
     };
 
+    const openConvert = (license) => {
+        setShowConvert(license);
+        setConvertForm({
+            plan: 'monthly', deviceLimit: String(license.deviceLimit || 1),
+            customDays: '', price: '', discountedPrice: '',
+            notes: license.notes || '',
+            features: license.features ? { ...license.features } : { ...DEFAULT_FEATURES },
+        });
+        setConvertErr('');
+        setConvertedKey('');
+        setConvertedLicense(null);
+    };
+
+    const convertLicense = async (e) => {
+        e.preventDefault();
+        setConvertBusy(true);
+        setConvertErr('');
+        const r = await apiFetch('/api/licenses/convert', {
+            method: 'POST',
+            body: { oldKey: showConvert.key, ...convertForm },
+        });
+        if (!r?.ok) { setConvertErr(r?.data?.error || 'Conversion failed'); setConvertBusy(false); return; }
+        setConvertedKey(r.data.key);
+        setConvertedLicense(r.data.license || null);
+        setConvertBusy(false);
+        load();
+    };
+
     const updateLicense = async (e) => {
         e.preventDefault();
         setEditBusy(true);
@@ -537,7 +578,7 @@ export default function LicensesPage() {
 
     const now = Math.floor(Date.now() / 1000);
 
-    return (
+    return (<>
         <AppLayout>
             <div className="page">
                 <div className="page-header">
@@ -659,11 +700,21 @@ export default function LicensesPage() {
                                                             Revoke
                                                         </button>
                                                     )}
+                                                    {(l.plan === 'trial' || l.plan === 'trial1day') && !l.revoked && (
+                                                        <button
+                                                            className="btn btn-sm"
+                                                            style={{ background: 'rgba(99,102,241,.15)', color: '#818cf8', border: '1px solid rgba(99,102,241,.35)' }}
+                                                            onClick={() => openConvert(l)}
+                                                            title="Convert this trial to a paid plan"
+                                                        >
+                                                            Convert
+                                                        </button>
+                                                    )}
                                                     {user?.role === 'super' && (
                                                         <button
                                                             className="btn btn-ghost btn-sm"
                                                             style={{ color: '#ef4444', borderColor: 'rgba(239,68,68,.3)' }}
-                                                            onClick={() => setShowDel({ key: l.key, clientName: l.clientName })}
+                                                            onClick={() => setShowDel({ key: l.key, clientName: l.clientName, price: Math.max(0, parseFloat(l.discountedPrice ?? l.price) || 0), plan: l.plan || '' })}
                                                         >
                                                             Delete
                                                         </button>
@@ -800,6 +851,22 @@ export default function LicensesPage() {
                                                 placeholder="Internal note" style={{ minHeight: 42 }} />
                                         </div>
                                     </div>
+                                    {/* Affiliate */}
+                                    {affiliates.length > 0 && (
+                                        <div className="form-group">
+                                            <label className="form-label">Referred by Affiliate</label>
+                                            <select className="form-select" value={form.affiliateId}
+                                                onChange={e => {
+                                                    const chosen = affiliates.find(a => a.id === e.target.value);
+                                                    setForm(f => ({ ...f, affiliateId: e.target.value, affiliateName: chosen?.name || '' }));
+                                                }}>
+                                                <option value="">— None / Direct Sale —</option>
+                                                {affiliates.map(a => (
+                                                    <option key={a.id} value={a.id}>{a.name} ({a.commission}%)</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    )}
                                     {/* Feature Flags */}
                                     <div className="form-group">
                                         <label className="form-label" style={{ marginBottom: 8 }}>Features Included</label>
@@ -838,12 +905,32 @@ export default function LicensesPage() {
             {/* ── Delete Modal ───────────────────────────────────────────── */}
             {showDel && (
                 <div className="modal-overlay">
-                    <div className="modal" style={{ maxWidth: 420 }}>
+                    <div className="modal" style={{ maxWidth: 440 }}>
                         <div className="modal-header">
                             <span className="modal-title">Delete License</span>
                             <button className="modal-close" onClick={() => setShowDel(null)} disabled={delBusy}>×</button>
                         </div>
                         <div className="modal-body">
+                            {showDel.price > 0 && (
+                                <div style={{
+                                    background: 'rgba(239,68,68,0.1)',
+                                    border: '1px solid rgba(239,68,68,0.4)',
+                                    borderRadius: 8,
+                                    padding: '12px 14px',
+                                    marginBottom: 14,
+                                }}>
+                                    <div style={{ color: '#ef4444', fontWeight: 700, fontSize: 13, marginBottom: 4 }}>
+                                        ⚠ This license has a paid amount!
+                                    </div>
+                                    <div style={{ color: '#fca5a5', fontSize: 12 }}>
+                                        Amount: <strong>₹{showDel.price.toLocaleString('en-IN')}</strong> ({showDel.plan})
+                                    </div>
+                                    <div style={{ color: '#fca5a5', fontSize: 12, marginTop: 4 }}>
+                                        Deleting this will permanently remove it from your sales totals.
+                                        This action will be highlighted in <strong>Logs</strong> for audit.
+                                    </div>
+                                </div>
+                            )}
                             <p style={{ color: '#94a3b8', fontSize: 13 }}>
                                 Permanently delete license for <span style={{ color: '#e2e8f0', fontWeight: 700 }}>{showDel.clientName}</span>?<br />
                                 <span style={{ fontSize: 12, color: '#ef4444' }}>This removes the record entirely and cannot be undone.</span>
@@ -855,7 +942,7 @@ export default function LicensesPage() {
                         <div className="modal-footer">
                             <button className="btn btn-ghost" onClick={() => setShowDel(null)} disabled={delBusy}>Cancel</button>
                             <button className="btn btn-danger" onClick={deleteLic} disabled={delBusy}>
-                                {delBusy ? 'Deleting…' : 'Delete Permanently'}
+                                {delBusy ? 'Deleting…' : (showDel.price > 0 ? 'Delete Anyway' : 'Delete Permanently')}
                             </button>
                         </div>
                     </div>
@@ -1103,5 +1190,107 @@ export default function LicensesPage() {
                 </div>
             )}
         </AppLayout>
+
+        {/* ── Convert Modal ─────────────────────────────────────────── */}
+        {showConvert && (
+            <div className="modal-overlay" onClick={e => { if (!convertedKey && e.target === e.currentTarget) setShowConvert(null); }}>
+                <div className="modal" style={{ maxWidth: 520 }}>
+                    <div className="modal-header">
+                        <span className="modal-title">
+                            {convertedKey ? '✓ Converted to Paid Plan' : `Convert Trial → Paid`}
+                        </span>
+                        <button className="modal-close" onClick={() => setShowConvert(null)} disabled={convertBusy}>×</button>
+                    </div>
+
+                    {convertedKey ? (
+                        <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                            <div style={{ fontSize: 13, color: '#94a3b8' }}>
+                                Trial for <strong style={{ color: '#e2e8f0' }}>{showConvert.clientName}</strong> has been converted.<br />
+                                Old trial key was auto-revoked. New key:
+                            </div>
+                            <div style={{ background: '#161c2d', border: '1px solid #7c3aed', borderRadius: 10, padding: '14px 16px' }}>
+                                <div style={{ fontSize: 11, color: '#4a5980', marginBottom: 5, fontWeight: 600 }}>NEW LICENSE KEY</div>
+                                <div style={{ fontFamily: 'Courier New, monospace', fontSize: 14, color: '#a78bfa', wordBreak: 'break-all' }}>{convertedKey}</div>
+                            </div>
+                            <button className="btn btn-primary" onClick={() => { navigator.clipboard.writeText(convertedKey); setCopied('__conv__'); setTimeout(() => setCopied(''), 2000); }}>
+                                {copied === '__conv__' ? '✓ Copied!' : 'Copy New Key'}
+                            </button>
+                            {convertedLicense && (
+                                <button className="btn btn-ghost" onClick={() => { downloadInvoiceForLicense(convertedLicense); }} disabled={invoiceBusy}>
+                                    {invoiceBusy ? 'Preparing…' : 'Download Invoice (PDF)'}
+                                </button>
+                            )}
+                            <button className="btn btn-ghost" onClick={() => setShowConvert(null)}>Close</button>
+                        </div>
+                    ) : (
+                        <form onSubmit={convertLicense}>
+                            <div className="modal-body">
+                                {/* Locked client info preview */}
+                                <div style={{ background: '#0f1420', border: '1px solid #1e2640', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 12 }}>
+                                    <div style={{ color: '#4a5980', marginBottom: 4, fontWeight: 600, fontSize: 11 }}>CONVERTING FROM TRIAL</div>
+                                    <div><span style={{ color: '#64748b' }}>Client:</span> <strong style={{ color: '#e2e8f0' }}>{showConvert.clientName}</strong></div>
+                                    {showConvert.clientPhone && <div><span style={{ color: '#64748b' }}>Phone:</span> {showConvert.clientPhone}</div>}
+                                    <div style={{ marginTop: 4 }}><span style={{ color: '#64748b' }}>Machine ID:</span> <span style={{ fontFamily: 'Courier New, monospace', color: '#7c3aed', fontSize: 11 }}>{showConvert.machineId}</span></div>
+                                    <div style={{ color: '#f59e0b', fontSize: 11, marginTop: 6 }}>⚠ Machine ID is locked — new key will be bound to the same machine.</div>
+                                </div>
+
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label className="form-label">New Plan *</label>
+                                        <select className="form-select" value={convertForm.plan}
+                                            onChange={e => setConvertForm(f => ({ ...f, plan: e.target.value }))}>
+                                            {PLANS.filter(p => p.value !== 'trial' && p.value !== 'trial1day').map(p => (
+                                                <option key={p.value} value={p.value}>{p.label}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Device Limit</label>
+                                        <input className="form-input" type="number" min={1} max={255} value={convertForm.deviceLimit}
+                                            onChange={e => setConvertForm(f => ({ ...f, deviceLimit: e.target.value }))} />
+                                    </div>
+                                </div>
+
+                                {convertForm.plan === 'custom' && (
+                                    <div className="form-group" style={{ marginTop: 10 }}>
+                                        <label className="form-label">Custom Days *</label>
+                                        <input className="form-input" type="number" min={1} required={convertForm.plan === 'custom'} value={convertForm.customDays}
+                                            onChange={e => setConvertForm(f => ({ ...f, customDays: e.target.value }))} placeholder="e.g. 45" />
+                                    </div>
+                                )}
+
+                                <div className="form-row" style={{ marginTop: 10 }}>
+                                    <div className="form-group">
+                                        <label className="form-label">Price (₹) *</label>
+                                        <input className="form-input" type="number" min="0.01" step="0.01" required value={convertForm.price}
+                                            onChange={e => setConvertForm(f => ({ ...f, price: e.target.value }))} placeholder="e.g. 999" />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Discounted Price (₹)</label>
+                                        <input className="form-input" type="number" min="0" step="0.01" value={convertForm.discountedPrice}
+                                            onChange={e => setConvertForm(f => ({ ...f, discountedPrice: e.target.value }))} placeholder="Leave blank for no discount" />
+                                    </div>
+                                </div>
+
+                                <div className="form-group" style={{ marginTop: 10 }}>
+                                    <label className="form-label">Notes</label>
+                                    <input className="form-input" value={convertForm.notes}
+                                        onChange={e => setConvertForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional" />
+                                </div>
+
+                                {convertErr && <div className="form-error" style={{ marginTop: 10 }}>{convertErr}</div>}
+                            </div>
+                            <div className="modal-footer">
+                                <button type="button" className="btn btn-ghost" onClick={() => setShowConvert(null)}>Cancel</button>
+                                <button type="submit" className="btn btn-primary" disabled={convertBusy}>
+                                    {convertBusy ? 'Converting…' : 'Convert & Generate Key'}
+                                </button>
+                            </div>
+                        </form>
+                    )}
+                </div>
+            </div>
+        )}
+    </>
     );
 }

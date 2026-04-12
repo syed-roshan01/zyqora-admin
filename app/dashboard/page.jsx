@@ -64,6 +64,14 @@ export default function DashboardPage() {
         }, {})).sort((a, b) => b.total - a.total).slice(0, 5)
         : [];
 
+    // Affiliate commission amounts are stored per-license at issue/convert time
+    const affilCommissionTotal = user?.role === 'super'
+        ? licenses
+            .filter(l => !l.revoked && (parseFloat(l.affiliateCommissionAmount) || 0) > 0)
+            .reduce((sum, l) => sum + (parseFloat(l.affiliateCommissionAmount) || 0), 0)
+        : 0;
+    const netAfterAffiliate = netMoney - affilCommissionTotal;
+
     const planCount = licenses.reduce((acc, l) => {
         if (!l.revoked) acc[l.plan] = (acc[l.plan] || 0) + 1;
         return acc;
@@ -134,6 +142,24 @@ export default function DashboardPage() {
                                     </div>
                                     <div className="stat-sub">Revenue minus expenses</div>
                                 </div>
+                                {user?.role === 'super' && (
+                                    <div className="stat-card">
+                                        <div className="stat-label">Affiliate Commission</div>
+                                        <div className="stat-value" style={{ color: '#f59e0b' }}>
+                                            ₹{affilCommissionTotal.toLocaleString('en-IN')}
+                                        </div>
+                                        <div className="stat-sub">Owed to affiliates</div>
+                                    </div>
+                                )}
+                                {user?.role === 'super' && (
+                                    <div className="stat-card">
+                                        <div className="stat-label">Net After Affiliates</div>
+                                        <div className="stat-value" style={{ color: netAfterAffiliate >= 0 ? '#22c55e' : '#ef4444' }}>
+                                            ₹{netAfterAffiliate.toLocaleString('en-IN')}
+                                        </div>
+                                        <div className="stat-sub">Money left minus commissions</div>
+                                    </div>
+                                )}
                             </div>
 
                             {user?.role === 'super' && topSpenders.length > 0 && (

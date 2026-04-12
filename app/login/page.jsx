@@ -22,8 +22,12 @@ export default function LoginPage() {
             const data = await res.json();
             if (!res.ok) { setError(data.error || 'Login failed'); return; }
             setToken(data.token);
-            localStorage.setItem('zyqora_admin_user', JSON.stringify({ username: data.username, role: data.role }));
-            router.replace('/dashboard');
+            localStorage.setItem('zyqora_admin_user', JSON.stringify({ username: data.username, role: data.role, name: data.name || null }));
+            if (data.role === 'affiliate') {
+                router.replace('/affiliate-dashboard');
+            } else {
+                router.replace('/dashboard');
+            }
         } catch {
             setError('Connection failed. Check your network.');
         } finally {

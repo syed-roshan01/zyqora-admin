@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
 import { signToken } from '@/lib/auth';
-import { getAdminByUsername, saveAdmin, listAdmins } from '@/lib/kv';
+import { getAdminByUsername, saveAdmin, listAdmins, getAffiliateByUsername } from '@/lib/kv';
 
 // Lazy-seed: creates super admin from env vars if no admins exist yet
 async function ensureSuperAdmin() {
@@ -32,16 +32,25 @@ export async function POST(req) {
 
         await ensureSuperAdmin();
 
-        const admin = await getAdminByUsername(username);
-        if (!admin || !admin.active)
+        // Try admin first, then affiliate
+        let account = await getAdminByUsername(username);
+        let isAffiliate = false;
+
+        if (!account) {
+            account = await getAffiliateByUsername(username);
+            isAffiliate = !!account;
+        }
+
+        if (!account || !account.active)
             return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
 
-        const valid = await bcrypt.compare(password, admin.passwordHash);
+        const valid = await bcrypt.compare(password, account.passwordHash);
         if (!valid)
             return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
 
-        const token = await signToken({ sub: admin.id, username: admin.username, role: admin.role });
-        return NextResponse.json({ token, username: admin.username, role: admin.role });
+        const role = isAffiliate ? 'affiliate' : account.role;
+        const token = await signToken({ sub: account.id, username: account.username, role });
+        return NextResponse.json({ token, username: account.username, role, name: account.name || null });
     } catch (err) {
         console.error('Login error:', err);
         return NextResponse.json({ error: 'Server error' }, { status: 500 });

@@ -45,6 +45,56 @@ export default function ExpensesPage() {
     const [adminFilter, setAdminFilter] = useState('all');
     const [showAddForm, setShowAddForm] = useState(false);
 
+    const [editTarget, setEditTarget] = useState(null);
+    const [editForm, setEditForm] = useState(null);
+    const [editBusy, setEditBusy] = useState(false);
+    const [editErr, setEditErr] = useState('');
+
+    const openEdit = (expense) => {
+        setEditTarget(expense);
+        setEditForm({
+            title: expense.title,
+            amount: String(expense.amount),
+            category: expense.category || '',
+            location: expense.location || '',
+            notes: expense.notes || '',
+            spentDate: toDateInput(expense.spentAt),
+        });
+        setEditErr('');
+    };
+
+    const closeEdit = () => {
+        setEditTarget(null);
+        setEditForm(null);
+        setEditErr('');
+    };
+
+    const saveEdit = async (ev) => {
+        ev.preventDefault();
+        setEditBusy(true);
+        setEditErr('');
+        const r = await apiFetch('/api/expenses', {
+            method: 'PATCH',
+            body: {
+                id: editTarget.id,
+                title: editForm.title,
+                amount: editForm.amount,
+                category: editForm.category,
+                location: editForm.location,
+                notes: editForm.notes,
+                spentAt: fromDateInput(editForm.spentDate),
+            },
+        });
+        if (!r?.ok) {
+            setEditErr(r?.data?.error || 'Failed to update expense');
+            setEditBusy(false);
+            return;
+        }
+        setEditBusy(false);
+        closeEdit();
+        load();
+    };
+
     const load = async () => {
         setLoading(true);
         const r = await apiFetch('/api/expenses');
@@ -124,6 +174,7 @@ export default function ExpensesPage() {
     };
 
     return (
+    <>
         <AppLayout>
             <div className="page">
                 <div className="page-header">
@@ -281,19 +332,35 @@ export default function ExpensesPage() {
                                         {isSuper && <th>Used By</th>}
                                         <th>Date</th>
                                         <th>Notes</th>
+                                        <th>Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {filtered.map((e, i) => (
                                         <tr key={e.id}>
                                             <td style={{ color: '#3a4560', fontSize: 12 }}>{i + 1}</td>
-                                            <td><span className="bold">{e.title}</span></td>
+                                            <td>
+                                                <span className="bold">{e.title}</span>
+                                                {isSuper && e.editedAt && (
+                                                    <div style={{ fontSize: 11, color: '#6366f1', marginTop: 2 }}>
+                                                        ✎ by {e.editedByName} · {fmtDate(e.editedAt)}
+                                                    </div>
+                                                )}
+                                            </td>
                                             <td>{e.category || '—'}</td>
                                             <td>{e.location || '—'}</td>
-                                            <td style={{ color: '#ef4444', fontWeight: 700 }}>{fmtMoney(e.amount)}</td>
+                                            <td style={{ color: '#ef4444', fontWeight: 700 }}>
+                                                {fmtMoney(e.amount)}
+                                                {isSuper && e.editedAt && e.originalValues?.amount !== undefined && Number(e.originalValues.amount) !== Number(e.amount) && (
+                                                    <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 400 }}>was {fmtMoney(e.originalValues.amount)}</div>
+                                                )}
+                                            </td>
                                             {isSuper && <td>{e.spentByName}</td>}
                                             <td>{fmtDate(e.spentAt)}</td>
                                             <td>{e.notes || '—'}</td>
+                                            <td>
+                                                <button className="btn btn-sm btn-ghost" onClick={() => openEdit(e)}>Edit</button>
+                                            </td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -303,5 +370,104 @@ export default function ExpensesPage() {
                 </div>
             </div>
         </AppLayout>
+
+        {editTarget && editForm && (
+            <div className="modal-overlay" onClick={closeEdit}>
+                <div className="modal" onClick={ev => ev.stopPropagation()} style={{ maxWidth: 520 }}>
+                    <div className="modal-header">
+                        <div style={{ fontWeight: 700, fontSize: 16 }}>Edit Expense</div>
+                        <button className="btn btn-ghost btn-sm" onClick={closeEdit}>✕</button>
+                    </div>
+
+                    {isSuper && editTarget.editedAt && editTarget.originalValues && (
+                        <div style={{ background: '#1a1f32', border: '1px solid #2a3350', borderRadius: 8, padding: 12, margin: '0 20px 4px', fontSize: 12 }}>
+                            <div style={{ color: '#94a3b8', marginBottom: 6, fontWeight: 600 }}>Previous Edit</div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                                {Number(editTarget.originalValues.amount) !== Number(editTarget.amount) && (
+                                    <span>Amount: <span style={{ color: '#ef4444' }}>{fmtMoney(editTarget.originalValues.amount)}</span> → <span style={{ color: '#22c55e' }}>{fmtMoney(editTarget.amount)}</span></span>
+                                )}
+                                {editTarget.originalValues.title !== editTarget.title && (
+                                    <span>Title: <span style={{ color: '#94a3b8' }}>{editTarget.originalValues.title}</span> → <span style={{ color: '#e2e8f0' }}>{editTarget.title}</span></span>
+                                )}
+                            </div>
+                            <div style={{ color: '#6366f1', marginTop: 6 }}>Last edited by {editTarget.editedByName} on {fmtDate(editTarget.editedAt)}</div>
+                        </div>
+                    )}
+
+                    <form onSubmit={saveEdit}>
+                        <div className="modal-body">
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Expense Title *</label>
+                                    <input
+                                        className="form-input"
+                                        value={editForm.title}
+                                        onChange={ev => setEditForm(f => ({ ...f, title: ev.target.value }))}
+                                        required
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Amount (₹) *</label>
+                                    <input
+                                        className="form-input"
+                                        type="number"
+                                        min="0.01"
+                                        step="0.01"
+                                        value={editForm.amount}
+                                        onChange={ev => setEditForm(f => ({ ...f, amount: ev.target.value }))}
+                                        required
+                                    />
+                                </div>
+                            </div>
+                            <div className="form-row" style={{ marginTop: 12 }}>
+                                <div className="form-group">
+                                    <label className="form-label">Category</label>
+                                    <input
+                                        className="form-input"
+                                        value={editForm.category}
+                                        onChange={ev => setEditForm(f => ({ ...f, category: ev.target.value }))}
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Where Used</label>
+                                    <input
+                                        className="form-input"
+                                        value={editForm.location}
+                                        onChange={ev => setEditForm(f => ({ ...f, location: ev.target.value }))}
+                                    />
+                                </div>
+                            </div>
+                            <div className="form-row" style={{ marginTop: 12 }}>
+                                <div className="form-group">
+                                    <label className="form-label">Spent Date</label>
+                                    <input
+                                        className="form-input"
+                                        type="date"
+                                        value={editForm.spentDate}
+                                        onChange={ev => setEditForm(f => ({ ...f, spentDate: ev.target.value }))}
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Notes</label>
+                                    <input
+                                        className="form-input"
+                                        value={editForm.notes}
+                                        onChange={ev => setEditForm(f => ({ ...f, notes: ev.target.value }))}
+                                    />
+                                </div>
+                            </div>
+                            {editErr && <div className="form-error" style={{ marginTop: 12 }}>{editErr}</div>}
+                        </div>
+                        <div className="modal-footer">
+                            <button type="button" className="btn btn-ghost" onClick={closeEdit}>Cancel</button>
+                            <button type="submit" className="btn btn-primary" disabled={editBusy}>
+                                {editBusy ? 'Saving…' : 'Save Changes'}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        )}
+    </>
     );
 }
