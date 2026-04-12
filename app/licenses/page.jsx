@@ -16,16 +16,17 @@ const PLANS = [
 ];
 
 const FEATURE_OPTIONS = [
-    { key: 'mobile',       label: 'Open on Mobile',  sub: 'Cloudflare tunnel' },
-    { key: 'trustBuilder', label: 'Trust Builder',   sub: 'Account warming'   },
-    { key: 'autoReply',    label: 'Auto Reply',      sub: 'Auto responses'    },
-    { key: 'chatbot',      label: 'Chatbot Flows',   sub: 'Flow builder'      },
-    { key: 'liveChat',     label: 'Live Chat',       sub: 'Real-time chat'    },
-    { key: 'groupGrabber', label: 'Group Grabber',   sub: 'Extract groups'    },
-    { key: 'aiAutomation', label: 'AI Automation',   sub: 'AI-powered actions' },
+    { key: 'mobile',       label: 'Open on Mobile',    sub: 'Cloudflare tunnel'        },
+    { key: 'trustBuilder', label: 'Trust Builder',     sub: 'Account warming'          },
+    { key: 'autoReply',    label: 'Auto Reply',        sub: 'Auto responses'           },
+    { key: 'chatbot',      label: 'Chatbot Flows',     sub: 'Flow builder'             },
+    { key: 'liveChat',     label: 'Live Chat',         sub: 'Real-time chat'           },
+    { key: 'groupGrabber', label: 'Group Grabber',     sub: 'Extract groups'           },
+    { key: 'aiAutomation', label: 'AI Automation',     sub: 'AI-powered actions'       },
+    { key: 'forms',        label: 'Interactive Forms', sub: 'Conversational data forms' },
 ];
 
-const DEFAULT_FEATURES = { mobile: true, trustBuilder: true, autoReply: true, chatbot: true, liveChat: true, groupGrabber: true, aiAutomation: true };
+const DEFAULT_FEATURES = { mobile: true, trustBuilder: true, autoReply: true, chatbot: true, liveChat: true, groupGrabber: true, aiAutomation: true, forms: true };
 
 const DEFAULT_FORM = {
     clientName: '', clientPhone: '', clientEmail: '',
@@ -134,7 +135,7 @@ export default function LicensesPage() {
     const [delBusy,  setDelBusy]  = useState(false);
     const [showDetail,setShowDetail]= useState(null);   // license object
     const [showEdit,  setShowEdit]  = useState(null);   // license object
-    const [editForm,  setEditForm]  = useState({ clientName: '', clientPhone: '', clientEmail: '', businessCategory: '', website: '', price: '', notes: '', features: { ...DEFAULT_FEATURES } });
+    const [editForm,  setEditForm]  = useState({ clientName: '', clientPhone: '', clientEmail: '', businessCategory: '', website: '', price: '', notes: '', affiliateId: '', affiliateName: '', features: { ...DEFAULT_FEATURES } });
     const [editBusy,  setEditBusy]  = useState(false);
     const [editErr,   setEditErr]   = useState('');
     const [exportFormat, setExportFormat] = useState('csv');
@@ -401,12 +402,13 @@ export default function LicensesPage() {
             plan: 'monthly', deviceLimit: String(license.deviceLimit || 1),
             customDays: '', price: '', discountedPrice: '',
             notes: license.notes || '',
+            machineId: license.machineId || '',
             features: license.features ? { ...license.features } : { ...DEFAULT_FEATURES },
         });
         setConvertErr('');
         setConvertedKey('');
         setConvertedLicense(null);
-    };
+    };;
 
     const convertLicense = async (e) => {
         e.preventDefault();
@@ -427,7 +429,7 @@ export default function LicensesPage() {
         e.preventDefault();
         setEditBusy(true);
         setEditErr('');
-        const r = await apiFetch('/api/licenses/update', { method: 'POST', body: { key: showEdit.key, clientName: editForm.clientName, clientPhone: editForm.clientPhone, clientEmail: editForm.clientEmail, businessCategory: editForm.businessCategory, website: editForm.website, price: editForm.price, notes: editForm.notes, features: editForm.features } });
+        const r = await apiFetch('/api/licenses/update', { method: 'POST', body: { key: showEdit.key, clientName: editForm.clientName, clientPhone: editForm.clientPhone, clientEmail: editForm.clientEmail, businessCategory: editForm.businessCategory, website: editForm.website, price: editForm.price, notes: editForm.notes, affiliateId: editForm.affiliateId, affiliateName: editForm.affiliateName, features: editForm.features } });
         if (!r?.ok) { setEditErr(r?.data?.error || 'Failed to update'); setEditBusy(false); return; }
         setShowEdit(null);
         setEditBusy(false);
@@ -689,7 +691,7 @@ export default function LicensesPage() {
                                                 <div style={{ display: 'flex', gap: 6 }}>
                                                     <button
                                                         className="btn btn-ghost btn-sm"
-                                                        onClick={() => { setShowEdit(l); setEditForm({ clientName: l.clientName || '', clientPhone: l.clientPhone || '', clientEmail: l.clientEmail || '', businessCategory: l.businessCategory || '', website: l.website || '', price: l.price ?? '', notes: l.notes || '', features: { ...DEFAULT_FEATURES, ...(l.features || {}) } }); setEditErr(''); }}
+                                                        onClick={() => { setShowEdit(l); setEditForm({ clientName: l.clientName || '', clientPhone: l.clientPhone || '', clientEmail: l.clientEmail || '', businessCategory: l.businessCategory || '', website: l.website || '', price: l.price ?? '', notes: l.notes || '', affiliateId: l.affiliateId || '', affiliateName: l.affiliateName || '', features: { ...DEFAULT_FEATURES, ...(l.features || {}) } }); setEditErr(''); }}
                                                         title="Edit price & notes"
                                                     >✎</button>
                                                     {!l.revoked && (
@@ -1102,7 +1104,7 @@ export default function LicensesPage() {
                             <button className="btn btn-ghost" onClick={() => downloadInvoiceForLicense(showDetail)} disabled={invoiceBusy}>
                                 {invoiceBusy ? 'Preparing Invoice…' : 'Download Invoice'}
                             </button>
-                            <button className="btn btn-primary" onClick={() => { setShowEdit(showDetail); setEditForm({ clientName: showDetail.clientName || '', clientPhone: showDetail.clientPhone || '', clientEmail: showDetail.clientEmail || '', price: showDetail.price ?? '', notes: showDetail.notes || '', features: { ...DEFAULT_FEATURES, ...(showDetail.features || {}) } }); setEditErr(''); setShowDetail(null); }}>✎ Edit</button>
+                            <button className="btn btn-primary" onClick={() => { setShowEdit(showDetail); setEditForm({ clientName: showDetail.clientName || '', clientPhone: showDetail.clientPhone || '', clientEmail: showDetail.clientEmail || '', price: showDetail.price ?? '', notes: showDetail.notes || '', affiliateId: showDetail.affiliateId || '', affiliateName: showDetail.affiliateName || '', features: { ...DEFAULT_FEATURES, ...(showDetail.features || {}) } }); setEditErr(''); setShowDetail(null); }}>✎ Edit</button>
                         </div>
                     </div>
                 </div>
@@ -1158,6 +1160,21 @@ export default function LicensesPage() {
                                         onChange={e => setEditForm(f => ({ ...f, price: e.target.value }))}
                                         placeholder="e.g. 999" />
                                 </div>
+                                {user?.role === 'super' && affiliates.length > 0 && (
+                                    <div className="form-group">
+                                        <label className="form-label">Referred by Affiliate</label>
+                                        <select className="form-select" value={editForm.affiliateId}
+                                            onChange={e => {
+                                                const aff = affiliates.find(a => a.id === e.target.value);
+                                                setEditForm(f => ({ ...f, affiliateId: e.target.value, affiliateName: aff ? aff.name : '' }));
+                                            }}>
+                                            <option value="">— None —</option>
+                                            {affiliates.map(a => (
+                                                <option key={a.id} value={a.id}>{a.name} ({a.commission}%)</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
                                 <div className="form-group">
                                     <label className="form-label">Notes</label>
                                     <textarea className="form-textarea" value={editForm.notes}
@@ -1231,7 +1248,22 @@ export default function LicensesPage() {
                                     <div><span style={{ color: '#64748b' }}>Client:</span> <strong style={{ color: '#e2e8f0' }}>{showConvert.clientName}</strong></div>
                                     {showConvert.clientPhone && <div><span style={{ color: '#64748b' }}>Phone:</span> {showConvert.clientPhone}</div>}
                                     <div style={{ marginTop: 4 }}><span style={{ color: '#64748b' }}>Machine ID:</span> <span style={{ fontFamily: 'Courier New, monospace', color: '#7c3aed', fontSize: 11 }}>{showConvert.machineId}</span></div>
-                                    <div style={{ color: '#f59e0b', fontSize: 11, marginTop: 6 }}>⚠ Machine ID is locked — new key will be bound to the same machine.</div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+                                        <div style={{ color: '#f59e0b', fontSize: 11 }}>⚠ Machine ID is locked — new key will be bound to the same machine.</div>
+                                        <button type="button" className="btn btn-sm btn-ghost" style={{ fontSize: 11, padding: '2px 8px' }}
+                                            onClick={() => setConvertForm(f => ({ ...f, _overrideMachineId: !f._overrideMachineId, machineId: f._overrideMachineId ? showConvert.machineId : f.machineId }))}>
+                                            {convertForm._overrideMachineId ? 'Use Original ID' : 'Different ID?'}
+                                        </button>
+                                    </div>
+                                    {convertForm._overrideMachineId && (
+                                        <div style={{ marginTop: 8 }}>
+                                            <input className="form-input" style={{ fontFamily: 'Courier New, monospace', fontSize: 12 }}
+                                                placeholder="Enter new Machine ID"
+                                                value={convertForm.machineId}
+                                                onChange={e => setConvertForm(f => ({ ...f, machineId: e.target.value.toUpperCase() }))}
+                                            />
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div className="form-row">

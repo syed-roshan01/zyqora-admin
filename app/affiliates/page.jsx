@@ -34,6 +34,10 @@ export default function AffiliatesPage() {
     const [commBusy, setCommBusy] = useState(false);
     const [commErr, setCommErr] = useState('');
 
+    // Delete state: { id, step } step: 1=first confirm, 2=second confirm
+    const [deleteState, setDeleteState] = useState(null);
+    const [deleteBusy, setDeleteBusy] = useState(false);
+
     useEffect(() => {
         try {
             const u = localStorage.getItem('zyqora_admin_user');
@@ -104,6 +108,16 @@ export default function AffiliatesPage() {
         setNewComm('');
         setCommBusy(false);
         load();
+    };
+
+    const deleteAffiliate = async () => {
+        setDeleteBusy(true);
+        const r = await apiFetch(`/api/affiliates/${deleteState.id}/delete`, { method: 'POST' });
+        if (r?.ok) {
+            setDeleteState(null);
+            load();
+        }
+        setDeleteBusy(false);
     };
 
     return (
@@ -225,6 +239,32 @@ export default function AffiliatesPage() {
                                                     >
                                                         {a.active ? 'Deactivate' : 'Activate'}
                                                     </button>
+                                                    {deleteState?.id === a.id ? (
+                                                        deleteState.step === 1 ? (
+                                                            <>
+                                                                <span style={{ fontSize: 11, color: '#f59e0b' }}>Sure?</span>
+                                                                <button className="btn btn-sm btn-ghost" style={{ color: '#ef4444', borderColor: 'rgba(239,68,68,.3)' }}
+                                                                    onClick={() => setDeleteState({ id: a.id, step: 2 })}>
+                                                                    Yes
+                                                                </button>
+                                                                <button className="btn btn-sm btn-ghost" onClick={() => setDeleteState(null)}>No</button>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 600 }}>Permanent!</span>
+                                                                <button className="btn btn-sm btn-ghost" style={{ color: '#ef4444', borderColor: 'rgba(239,68,68,.3)' }}
+                                                                    onClick={deleteAffiliate} disabled={deleteBusy}>
+                                                                    {deleteBusy ? '…' : 'Confirm'}
+                                                                </button>
+                                                                <button className="btn btn-sm btn-ghost" onClick={() => setDeleteState(null)} disabled={deleteBusy}>Cancel</button>
+                                                            </>
+                                                        )
+                                                    ) : (
+                                                        <button className="btn btn-sm btn-ghost" style={{ color: '#ef4444', borderColor: 'rgba(239,68,68,.3)' }}
+                                                            onClick={() => setDeleteState({ id: a.id, step: 1 })}>
+                                                            Delete
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </td>
                                             )}
