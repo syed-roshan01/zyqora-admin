@@ -16,6 +16,7 @@ export default function AffiliatesPage() {
     const [user, setUser] = useState(null);
     const [affiliates, setAffiliates] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [commissionMap, setCommissionMap] = useState({}); // affiliateId → total commission amount
     const [form, setForm] = useState(EMPTY_FORM);
     const [busy, setBusy] = useState(false);
     const [err, setErr] = useState('');
@@ -39,7 +40,7 @@ export default function AffiliatesPage() {
             if (u) {
                 const parsed = JSON.parse(u);
                 setUser(parsed);
-                if (parsed.role !== 'super') { router.replace('/dashboard'); return; }
+                if (parsed.role !== 'super' && parsed.role !== 'admin') { router.replace('/dashboard'); return; }
             }
         } catch {}
         load();
@@ -47,8 +48,21 @@ export default function AffiliatesPage() {
 
     const load = async () => {
         setLoading(true);
-        const r = await apiFetch('/api/affiliates/list');
-        if (r?.ok) setAffiliates(r.data || []);
+        const [affRes, licRes] = await Promise.all([
+            apiFetch('/api/affiliates/list'),
+            apiFetch('/api/licenses/list'),
+        ]);
+        if (affRes?.ok) setAffiliates(affRes.data || []);
+        if (licRes?.ok) {
+            const map = {};
+            for (const l of licRes.data || []) {
+                if (l.affiliateId && !l.revoked) {
+                    const amt = parseFloat(l.affiliateCommissionAmount) || 0;
+                    map[l.affiliateId] = (map[l.affiliateId] || 0) + amt;
+                }
+            }
+            setCommissionMap(map);
+        }
         setLoading(false);
     };
 
@@ -99,14 +113,16 @@ export default function AffiliatesPage() {
                 <div className="page-header">
                     <div>
                         <div className="page-title">Affiliates</div>
-                        <div className="page-subtitle">Manage affiliate accounts and commissions</div>
+                        <div className="page-subtitle">{user?.role === 'super' ? 'Manage affiliate accounts and commissions' : 'View affiliate accounts and commission totals'}</div>
                     </div>
+                    {user?.role === 'super' && (
                     <button
                         className={`btn ${showForm ? 'btn-ghost' : 'btn-primary'}`}
                         onClick={() => { setShowForm(v => !v); setErr(''); }}
                     >
                         {showForm ? 'Close' : '+ Add Affiliate'}
                     </button>
+                    )}
                 </div>
 
                 <div className="page-body">
@@ -155,7 +171,7 @@ export default function AffiliatesPage() {
                     {loading ? (
                         <div className="empty">Loading…</div>
                     ) : affiliates.length === 0 ? (
-                        <div className="empty">No affiliates yet. Add one above.</div>
+                        <div className="empty">No affiliates yet.{user?.role === 'super' ? ' Add one above.' : ''}</div>
                     ) : (
                         <div className="table-wrap">
                             <table>
@@ -164,10 +180,11 @@ export default function AffiliatesPage() {
                                         <th>#</th>
                                         <th>Name</th>
                                         <th>Username</th>
-                                        <th>Commission</th>
+                                        <th>Commission %</th>
+                                        <th>Commission Earned</th>
                                         <th>Status</th>
                                         <th>Created</th>
-                                        <th>Actions</th>
+                                        {user?.role === 'super' && <th>Actions</th>}
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -180,11 +197,17 @@ export default function AffiliatesPage() {
                                                 <span style={{ color: '#22c55e', fontWeight: 700 }}>{a.commission}%</span>
                                             </td>
                                             <td>
+                                                <span style={{ color: '#f59e0b', fontWeight: 700 }}>
+                                                    ₹{(commissionMap[a.id] || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                                                </span>
+                                            </td>
+                                            <td>
                                                 <span className={`badge ${a.active ? 'badge-active' : 'badge-revoked'}`}>
                                                     {a.active ? 'Active' : 'Inactive'}
                                                 </span>
                                             </td>
                                             <td style={{ fontSize: 12, color: '#64748b' }}>{fmtDate(a.createdAt)}</td>
+                                            {user?.role === 'super' && (
                                             <td>
                                                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                                                     <button className="btn btn-sm btn-ghost"
@@ -204,6 +227,7 @@ export default function AffiliatesPage() {
                                                     </button>
                                                 </div>
                                             </td>
+                                            )}
                                         </tr>
                                     ))}
                                 </tbody>

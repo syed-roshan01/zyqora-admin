@@ -10,7 +10,7 @@ const ALL_NAV = [
     { href: '/sales',     icon: '₹',  label: 'Sales'     },
     { href: '/expenses',  icon: '₹-', label: 'Expenses'  },
     { href: '/admins',    icon: '⊛',  label: 'Admins',       superOnly: true },
-    { href: '/affiliates',icon: '◎',  label: 'Affiliates',   superOnly: true },
+    { href: '/affiliates',icon: '◎',  label: 'Affiliates'   },
     { href: '/logs',      icon: '☰',  label: 'Logs',         superOnly: true },
 ];
 
