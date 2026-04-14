@@ -20,6 +20,9 @@ export default function DashboardPage() {
     const [sales,    setSales]    = useState([]);
     const [expenses, setExpenses] = useState([]);
     const [affiliates, setAffiliates] = useState([]);
+    const [withdrawals, setWithdrawals] = useState([]);
+    const [affPayments, setAffPayments] = useState([]);
+    const [globalStats, setGlobalStats] = useState({ moneyLeft: 0 });
     const [user,     setUser]     = useState(null);
     const [loading,  setLoading]  = useState(true);
 
@@ -28,18 +31,24 @@ export default function DashboardPage() {
         if (cached) try { setUser(JSON.parse(cached)); } catch {}
 
         const loadData = async () => {
-            const [lRes, aRes, sRes, eRes, affRes] = await Promise.all([
+            const [lRes, aRes, sRes, eRes, affRes, wRes, apRes, statsRes] = await Promise.all([
                 apiFetch('/api/licenses/list'),
                 apiFetch('/api/admins/list').catch(() => null),
                 apiFetch('/api/sales'),
                 apiFetch('/api/expenses'),
                 apiFetch('/api/affiliates/list').catch(() => null),
+                apiFetch('/api/withdrawals'),
+                apiFetch('/api/affiliates/payments/list').catch(() => null),
+                apiFetch('/api/stats').catch(() => null),
             ]);
-            if (lRes?.ok) setLicenses(lRes.data);
-            if (aRes?.ok) setAdmins(aRes.data);
-            if (sRes?.ok) setSales(sRes.data);
-            if (eRes?.ok) setExpenses(eRes.data);
-            if (affRes?.ok) setAffiliates(affRes.data || []);
+            if (lRes?.ok)     setLicenses(lRes.data);
+            if (aRes?.ok)     setAdmins(aRes.data);
+            if (sRes?.ok)     setSales(sRes.data);
+            if (eRes?.ok)     setExpenses(eRes.data);
+            if (affRes?.ok)   setAffiliates(affRes.data || []);
+            if (wRes?.ok)     setWithdrawals(wRes.data || []);
+            if (apRes?.ok)    setAffPayments(apRes.data?.payments || []);
+            if (statsRes?.ok) setGlobalStats(statsRes.data || { moneyLeft: 0 });
             setLoading(false);
         };
         loadData();
@@ -52,7 +61,7 @@ export default function DashboardPage() {
     const revoked  = licenses.filter(l => l.revoked).length;
     const expired  = licenses.filter(l => !l.revoked && !l.isLifetime && l.expiryTs <= now).length;
     const issuedToday = licenses.filter(l => (l.issuedAt || 0) >= todayStart).length;
-    const totalRevenue = sales.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
+    const totalRevenue = sales.filter(s => !s.revoked).reduce((sum, s) => sum + (Number(s.price) || 0), 0);
     const totalExpenses = expenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
     const netMoney = totalRevenue - totalExpenses;
     const recent   = [...licenses].slice(0, 8);
@@ -69,19 +78,27 @@ export default function DashboardPage() {
 
     // Affiliate commission — use stored amount if available, else compute from affiliate % dynamically
     const affCommPctMap = Object.fromEntries(affiliates.map(a => [a.id, a.commission || 0]));
-    const affilCommissionTotal = user?.role === 'super'
-        ? licenses
-            .filter(l => !l.revoked && l.affiliateId)
-            .reduce((sum, l) => {
-                const stored = parseFloat(l.affiliateCommissionAmount);
-                if (stored > 0) return sum + stored;
-                // fallback: compute dynamically
-                const revenue = parseFloat(l.discountedPrice ?? l.price) || 0;
-                const pct = affCommPctMap[l.affiliateId] || 0;
-                return sum + (revenue * pct / 100);
-            }, 0)
-        : 0;
+    const affilCommissionTotal = sales
+        .filter(s => !s.revoked && s.affiliateId)
+        .reduce((sum, s) => {
+            const stored = parseFloat(s.affiliateCommissionAmount);
+            if (stored > 0) return sum + stored;
+            const revenue = parseFloat(s.discountedPrice ?? s.price) || 0;
+            const pct = affCommPctMap[s.affiliateId] || 0;
+            return sum + (revenue * pct / 100);
+        }, 0);
     const netAfterAffiliate = netMoney - affilCommissionTotal;
+
+    // Actual cash: deduct withdrawals + affiliate payments already paid out
+    const totalWithdrawn    = withdrawals.reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
+    const totalAffiliatePaid = affPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+    // For non-super admin: don't deduct global affiliate payouts — they only see their own scoped data
+    const actualCash = user?.role === 'super'
+        ? totalRevenue - totalExpenses - totalWithdrawn - totalAffiliatePaid
+        : totalRevenue - totalExpenses - totalWithdrawn;
+    // Remaining affiliate obligation (owed − already paid, floor at 0)
+    const affiliateStillOwed = Math.max(0, affilCommissionTotal - totalAffiliatePaid);
+    const netAfterAll       = actualCash - affiliateStillOwed;
 
     const planCount = licenses.reduce((acc, l) => {
         if (!l.revoked) acc[l.plan] = (acc[l.plan] || 0) + 1;
@@ -148,27 +165,31 @@ export default function DashboardPage() {
                                 </div>
                                 <div className="stat-card">
                                     <div className="stat-label">Money Left</div>
-                                    <div className="stat-value" style={{ color: netMoney >= 0 ? '#22c55e' : '#ef4444' }}>
-                                        ₹{netMoney.toLocaleString('en-IN')}
+                                    <div className="stat-value" style={{ color: (user?.role === 'super' ? actualCash : globalStats.moneyLeft) >= 0 ? '#22c55e' : '#ef4444' }}>
+                                        ₹{(user?.role === 'super' ? actualCash : globalStats.moneyLeft).toLocaleString('en-IN')}
                                     </div>
-                                    <div className="stat-sub">Revenue minus expenses</div>
+                                    <div className="stat-sub">
+                                        {user?.role === 'super'
+                                            ? 'After expenses, withdrawals & affiliate payouts'
+                                            : 'Business net after expenses & all withdrawals'}
+                                    </div>
                                 </div>
                                 {user?.role === 'super' && (
                                     <div className="stat-card">
                                         <div className="stat-label">Affiliate Commission</div>
                                         <div className="stat-value" style={{ color: '#f59e0b' }}>
-                                            ₹{affilCommissionTotal.toLocaleString('en-IN')}
+                                            ₹{affiliateStillOwed.toLocaleString('en-IN')}
                                         </div>
-                                        <div className="stat-sub">Owed to affiliates</div>
+                                        <div className="stat-sub">Still owed to affiliates</div>
                                     </div>
                                 )}
                                 {user?.role === 'super' && (
                                     <div className="stat-card">
                                         <div className="stat-label">Net After Affiliates</div>
-                                        <div className="stat-value" style={{ color: netAfterAffiliate >= 0 ? '#22c55e' : '#ef4444' }}>
-                                            ₹{netAfterAffiliate.toLocaleString('en-IN')}
+                                        <div className="stat-value" style={{ color: netAfterAll >= 0 ? '#22c55e' : '#ef4444' }}>
+                                            ₹{netAfterAll.toLocaleString('en-IN')}
                                         </div>
-                                        <div className="stat-sub">Money left minus commissions</div>
+                                        <div className="stat-sub">Cash minus unpaid commissions</div>
                                     </div>
                                 )}
                             </div>

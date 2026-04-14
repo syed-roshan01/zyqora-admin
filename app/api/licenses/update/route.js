@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth';
-import { getLicense, saveLicense } from '@/lib/kv';
+import { getLicense, saveLicense, getAffiliate } from '@/lib/kv';
 
 export async function POST(req) {
     const { error, status, session } = await requireAuth(req);
@@ -34,6 +34,23 @@ export async function POST(req) {
             ? { exceptionBoundMachineId: null }
             : {}),
     };
+
+    // Recompute affiliateCommissionAmount when affiliate is changed by super
+    if (session.role === 'super' && affiliateId !== undefined) {
+        if (affiliateId) {
+            const aff = await getAffiliate(affiliateId);
+            if (aff) {
+                const revenue = (updated.discountedPrice > 0 ? updated.discountedPrice : updated.price) || 0;
+                updated.affiliateCommissionAmount = parseFloat(((revenue * aff.commission) / 100).toFixed(2));
+            } else {
+                updated.affiliateCommissionAmount = null;
+            }
+        } else {
+            // affiliate removed
+            updated.affiliateCommissionAmount = null;
+        }
+    }
+
     await saveLicense(updated);
     return NextResponse.json({ success: true, license: updated });
 }

@@ -9,6 +9,16 @@ function fmtDateTime(ts) {
     return new Date(ts * 1000).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+function toDateInput(ts) {
+    const d = ts ? new Date(ts * 1000) : new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function fromDateInput(v) {
+    if (!v) return Math.floor(Date.now() / 1000);
+    return Math.floor(new Date(`${v}T00:00:00`).getTime() / 1000);
+}
+
 function fmtMoney(v) {
     const n = Math.max(0, parseFloat(v) || 0);
     return '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
@@ -22,6 +32,12 @@ export default function PaymentsPage() {
     const [loading, setLoading] = useState(true);
     const [filterAff, setFilterAff] = useState('all');
     const [search, setSearch] = useState('');
+
+    // Edit payment modal
+    const [editTarget, setEditTarget] = useState(null);
+    const [editForm,   setEditForm]   = useState({ amount: '', note: '', date: '' });
+    const [editBusy,   setEditBusy]   = useState(false);
+    const [editErr,    setEditErr]    = useState('');
 
     useEffect(() => {
         try {
@@ -68,7 +84,34 @@ export default function PaymentsPage() {
     }
     const grandTotal = payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
 
+    const openEdit = (p) => {
+        setEditTarget(p);
+        setEditForm({ amount: String(p.amount), note: p.note || '', date: toDateInput(p.paidAt) });
+        setEditErr('');
+    };
+
+    const closeEdit = () => { setEditTarget(null); setEditErr(''); };
+
+    const saveEdit = async (e) => {
+        e.preventDefault();
+        setEditBusy(true);
+        setEditErr('');
+        const r = await apiFetch(`/api/affiliates/payments/${editTarget.id}`, {
+            method: 'PUT',
+            body: {
+                amount: editForm.amount,
+                note:   editForm.note,
+                paidAt: fromDateInput(editForm.date),
+            },
+        });
+        if (!r?.ok) { setEditErr(r?.data?.error || 'Failed'); setEditBusy(false); return; }
+        setEditBusy(false);
+        closeEdit();
+        load();
+    };
+
     return (
+        <>
         <AppLayout>
             <div className="page">
                 <div className="page-header">
@@ -133,6 +176,7 @@ export default function PaymentsPage() {
                                         <th>Note</th>
                                         <th>Paid By</th>
                                         <th>Date &amp; Time</th>
+                                        <th></th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -146,6 +190,13 @@ export default function PaymentsPage() {
                                             </td>
                                             <td style={{ fontSize: 12, color: '#64748b' }}>{p.paidByName || p.paidBy}</td>
                                             <td style={{ fontSize: 12, color: '#64748b' }}>{fmtDateTime(p.paidAt)}</td>
+                                            <td>
+                                                <button
+                                                    className="btn btn-ghost btn-sm"
+                                                    onClick={() => openEdit(p)}
+                                                    title="Edit"
+                                                >✏️</button>
+                                            </td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -155,5 +206,64 @@ export default function PaymentsPage() {
                 </div>
             </div>
         </AppLayout>
+
+        {/* Edit Payment Modal */}
+        {editTarget && (
+            <div className="modal-overlay" onClick={closeEdit}>
+                <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
+                    <div className="modal-header">
+                        <div style={{ fontWeight: 700, fontSize: 16 }}>Edit Payment — {editTarget.affiliateName}</div>
+                        <button className="btn btn-ghost btn-sm" onClick={closeEdit}>✕</button>
+                    </div>
+                    <form onSubmit={saveEdit}>
+                        <div className="modal-body">
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Amount (₹) *</label>
+                                    <input
+                                        className="form-input"
+                                        type="number"
+                                        min="0.01"
+                                        step="0.01"
+                                        value={editForm.amount}
+                                        onChange={e => setEditForm(f => ({ ...f, amount: e.target.value }))}
+                                        required
+                                        autoFocus
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Date *</label>
+                                    <input
+                                        className="form-input"
+                                        type="date"
+                                        value={editForm.date}
+                                        onChange={e => setEditForm(f => ({ ...f, date: e.target.value }))}
+                                        required
+                                    />
+                                </div>
+                            </div>
+                            <div className="form-group" style={{ marginTop: 12 }}>
+                                <label className="form-label">Note</label>
+                                <input
+                                    className="form-input"
+                                    placeholder="Optional note"
+                                    value={editForm.note}
+                                    onChange={e => setEditForm(f => ({ ...f, note: e.target.value }))}
+                                    maxLength={200}
+                                />
+                            </div>
+                            {editErr && <div className="form-error" style={{ marginTop: 10 }}>{editErr}</div>}
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-ghost" type="button" onClick={closeEdit}>Cancel</button>
+                            <button className="btn btn-primary" type="submit" disabled={editBusy}>
+                                {editBusy ? 'Saving…' : 'Save Changes'}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        )}
+        </>
     );
 }

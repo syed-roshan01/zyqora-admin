@@ -14,15 +14,18 @@ export async function GET(req) {
     const sales = list
         .filter(l => l.price > 0)
         .map(l => ({
-            key:          l.key,
-            clientName:   l.clientName,
-            clientPhone:  l.clientPhone || '',
-            plan:         l.plan,
-            price:        l.price,
-            issuedBy:     l.issuedBy,
-            issuedByName: l.issuedByName,
-            issuedAt:     l.issuedAt,
-            revoked:      l.revoked || false,
+            key:                      l.key,
+            clientName:               l.clientName,
+            clientPhone:              l.clientPhone || '',
+            plan:                     l.plan,
+            price:                    l.price,
+            discountedPrice:          l.discountedPrice ?? null,
+            affiliateId:              l.affiliateId || null,
+            affiliateCommissionAmount: l.affiliateCommissionAmount ?? null,
+            issuedBy:                 l.issuedBy,
+            issuedByName:             l.issuedByName,
+            issuedAt:                 l.issuedAt,
+            revoked:                  l.revoked || false,
         }))
         .sort((a, b) => (b.issuedAt || 0) - (a.issuedAt || 0));
 
