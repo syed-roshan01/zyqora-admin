@@ -1,17 +1,17 @@
 import { NextResponse } from 'next/server';
 import { getLicense, saveLicense } from '@/lib/kv';
-import { validateKey } from '@/lib/license';
+import { validateKey, validateCloudKey } from '@/lib/license';
 
 // PUBLIC endpoint – called by the Zyqora desktop app on startup / activation
 export async function POST(req) {
     try {
-        const { key, machineId } = await req.json();
+        const { key, machineId, mode } = await req.json();
 
-        if (!key || !machineId)
-            return NextResponse.json({ valid: false, error: 'key and machineId required' });
+        if (!key)
+            return NextResponse.json({ valid: false, error: 'key required' });
 
         const cleanKey = key.trim().toUpperCase();
-        const cleanMid = machineId.trim().toUpperCase();
+        const cleanMid = machineId?.trim().toUpperCase() || '';
 
         // 1. DB existence + revocation check first
         const license = await getLicense(cleanKey);
@@ -20,10 +20,15 @@ export async function POST(req) {
         if (license.revoked)
             return NextResponse.json({ valid: false, error: 'Key has been revoked' });
 
-        // 2. Validate using client machineId by default.
+        // 2. Cloud keys use the internal CLOUD marker and never require a machine ID.
         //    If this specific license has super-admin exception enabled,
         //    allow fallback to the machineId stored at generation time.
-        const primaryCrypto = validateKey(cleanKey, cleanMid);
+        const isCloud = license.licenseMode === 'cloud' && mode === 'cloud';
+        if (license.licenseMode === 'cloud' && mode !== 'cloud')
+            return NextResponse.json({ valid: false, error: 'Cloud license requires cloud mode' });
+        if (license.licenseMode !== 'cloud' && !cleanMid)
+            return NextResponse.json({ valid: false, error: 'Desktop license requires machineId' });
+        const primaryCrypto = isCloud ? validateCloudKey(cleanKey) : validateKey(cleanKey, cleanMid);
         let crypto = primaryCrypto;
 
         let usedExceptionFallback = false;

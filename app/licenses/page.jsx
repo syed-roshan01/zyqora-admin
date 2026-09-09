@@ -31,7 +31,7 @@ const DEFAULT_FEATURES = { mobile: true, trustBuilder: true, autoReply: true, ch
 const DEFAULT_FORM = {
     clientName: '', clientPhone: '', clientEmail: '',
     businessCategory: '', website: '',
-    machineId: '', plan: 'monthly', deviceLimit: '1',
+    licenseMode: 'desktop', machineId: '', plan: 'monthly', deviceLimit: '1',
     customDays: '', notes: '', price: '', discountedPrice: '',
     features: { ...DEFAULT_FEATURES },
     affiliateId: '', affiliateName: '',
@@ -803,13 +803,21 @@ export default function LicensesPage() {
                                         </div>
                                     </div>
                                     <div className="form-group">
+                                        <label className="form-label">License Type *</label>
+                                        <select className="form-select" value={form.licenseMode}
+                                            onChange={e => setForm(f => ({ ...f, licenseMode: e.target.value, machineId: e.target.value === 'cloud' ? '' : f.machineId }))}>
+                                            <option value="desktop">Desktop License (Machine ID)</option>
+                                            <option value="cloud">Cloud License (No Machine ID)</option>
+                                        </select>
+                                    </div>
+                                    {form.licenseMode === 'desktop' && <div className="form-group">
                                         <label className="form-label">Machine ID *</label>
                                         <input className="form-input" required value={form.machineId}
                                             onChange={e => setForm(f => ({ ...f, machineId: e.target.value }))}
                                             placeholder="Paste from Zyqora app License screen"
                                             style={{ fontFamily: 'Courier New, monospace', fontSize: 12 }} />
                                         <span style={{ fontSize: 11, color: '#3a4560' }}>Found in the Zyqora desktop app → License screen → bottom</span>
-                                    </div>
+                                    </div>}
                                     <div className="form-row">
                                         <div className="form-group">
                                             <label className="form-label">Plan *</label>

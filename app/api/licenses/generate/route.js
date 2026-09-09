@@ -8,19 +8,19 @@ export async function POST(req) {
     const { error, status, session } = await requireAuth(req);
     if (error) return NextResponse.json({ error }, { status });
 
-    const { clientName, clientPhone, clientEmail, machineId,
+    const { clientName, clientPhone, clientEmail, machineId, licenseMode = 'desktop',
             plan, deviceLimit, customDays, notes, price, discountedPrice, features,
             businessCategory, website, affiliateId, affiliateName } = await req.json();
 
     const DEFAULT_FEATURES = { mobile: true, trustBuilder: true, autoReply: true, chatbot: true, liveChat: true, groupGrabber: true, aiAutomation: true, forms: true };
 
-    if (!machineId?.trim() || !plan || !clientName?.trim())
-        return NextResponse.json({ error: 'clientName, machineId and plan are required' }, { status: 400 });
+    if (!['desktop', 'cloud'].includes(licenseMode) || (licenseMode === 'desktop' && !machineId?.trim()) || !plan || !clientName?.trim())
+        return NextResponse.json({ error: 'clientName, license mode and plan are required' }, { status: 400 });
 
     const dl       = Math.max(1, Math.min(255, parseInt(deviceLimit) || 1));
     const expiryTs = planToExpiry(plan, customDays);
     const isLifetime = plan === 'lifetime';
-    const key = generateKey({ machineId: machineId.trim().toUpperCase(), expiryTs, deviceLimit: dl });
+    const key = generateKey({ machineId: machineId?.trim().toUpperCase() || 'CLOUD', expiryTs, deviceLimit: dl, licenseMode });
     const priceNum = Math.max(0, parseFloat(price) || 0);
     const discountedNumRaw = discountedPrice === '' || discountedPrice === undefined || discountedPrice === null
         ? priceNum
@@ -37,7 +37,8 @@ export async function POST(req) {
         price:        priceNum,
         discountedPrice: discountedNum,
         discountAmount,
-        machineId:    machineId.trim().toUpperCase(),
+        licenseMode,
+        machineId:    licenseMode === 'cloud' ? null : machineId.trim().toUpperCase(),
         clientName:   clientName.trim(),
         clientPhone:      (clientPhone || '').trim(),
         clientEmail:      (clientEmail || '').trim(),
