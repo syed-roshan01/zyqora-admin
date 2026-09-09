@@ -25,6 +25,9 @@ export default function DashboardPage() {
     const [globalStats, setGlobalStats] = useState({ moneyLeft: 0 });
     const [user,     setUser]     = useState(null);
     const [loading,  setLoading]  = useState(true);
+    const [demoEnabled, setDemoEnabled] = useState(true);
+    const [demoBusy, setDemoBusy] = useState(false);
+    const [demoMessage, setDemoMessage] = useState('');
 
     useEffect(() => {
         const cached = localStorage.getItem('zyqora_admin_user');
@@ -49,10 +52,24 @@ export default function DashboardPage() {
             if (wRes?.ok)     setWithdrawals(wRes.data || []);
             if (apRes?.ok)    setAffPayments(apRes.data?.payments || []);
             if (statsRes?.ok) setGlobalStats(statsRes.data || { moneyLeft: 0 });
+            const demoRes = await apiFetch('/api/settings/demo');
+            if (demoRes?.ok) setDemoEnabled(demoRes.data?.enabled !== false);
             setLoading(false);
         };
         loadData();
     }, []);
+
+    async function toggleDemo() {
+        setDemoBusy(true);
+        setDemoMessage('');
+        const next = !demoEnabled;
+        const res = await apiFetch('/api/settings/demo', { method: 'POST', body: { enabled: next } });
+        if (res?.ok) {
+            setDemoEnabled(next);
+            setDemoMessage(next ? 'Demo is enabled' : 'Demo is disabled');
+        } else setDemoMessage(res?.data?.error || 'Could not update demo status');
+        setDemoBusy(false);
+    }
 
     const now = Math.floor(Date.now() / 1000);
     const todayStart = Math.floor(new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime() / 1000);
@@ -120,6 +137,20 @@ export default function DashboardPage() {
                         <div className="empty">Loading stats…</div>
                     ) : (
                         <>
+                            {user?.role === 'super' && (
+                                <div className="card" style={{ marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+                                    <div>
+                                        <div style={{ fontWeight: 700, color: '#e2e8f0' }}>Public Demo</div>
+                                        <div style={{ color: '#64748b', fontSize: 12, marginTop: 4 }}>
+                                            {demoEnabled ? 'Visitors can open demo.zyqora.in' : 'Visitors are redirected to zyqora.in'}
+                                        </div>
+                                        {demoMessage && <div style={{ color: '#22c55e', fontSize: 12, marginTop: 5 }}>{demoMessage}</div>}
+                                    </div>
+                                    <button className="btn btn-primary" onClick={toggleDemo} disabled={demoBusy}>
+                                        {demoBusy ? 'Updating…' : demoEnabled ? 'Disable Demo' : 'Enable Demo'}
+                                    </button>
+                                </div>
+                            )}
                             <div className="stats-grid">
                                 <div className="stat-card">
                                     <div className="stat-label">Total Licenses</div>
