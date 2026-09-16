@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth';
 import { saveLicense, getAffiliate } from '@/lib/kv';
 import { saveLog } from '@/lib/logs';
-import { generateKey, planToExpiry } from '@/lib/license';
+import { generateKey, planToExpiry, LICENSE_MODES } from '@/lib/license';
 
 export async function POST(req) {
     const { error, status, session } = await requireAuth(req);
@@ -14,7 +14,10 @@ export async function POST(req) {
 
     const DEFAULT_FEATURES = { mobile: true, trustBuilder: true, autoReply: true, chatbot: true, liveChat: true, groupGrabber: true, aiAutomation: true, forms: true };
 
-    if (!['desktop', 'cloud'].includes(licenseMode) || (licenseMode === 'desktop' && !machineId?.trim()) || !plan || !clientName?.trim())
+    // Cloud licenses use a fixed internal identity marker instead of a real
+    // device — every other mode (desktop, app) is bound to one specific
+    // device's ID and requires it up front.
+    if (!LICENSE_MODES.includes(licenseMode) || (licenseMode !== 'cloud' && !machineId?.trim()) || !plan || !clientName?.trim())
         return NextResponse.json({ error: 'clientName, license mode and plan are required' }, { status: 400 });
 
     const dl       = Math.max(1, Math.min(255, parseInt(deviceLimit) || 1));

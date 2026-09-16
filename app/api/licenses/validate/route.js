@@ -20,14 +20,22 @@ export async function POST(req) {
         if (license.revoked)
             return NextResponse.json({ valid: false, error: 'Key has been revoked' });
 
-        // 2. Cloud keys use the internal CLOUD marker and never require a machine ID.
-        //    If this specific license has super-admin exception enabled,
-        //    allow fallback to the machineId stored at generation time.
-        const isCloud = license.licenseMode === 'cloud' && mode === 'cloud';
+        // 2. Each license type is bound to the platform it was actually issued
+        //    for — the desktop app never sends a `mode` field, the cloud build
+        //    always sends 'cloud', and the Android app always sends 'app' (see
+        //    the main app's server/routes/_license.js VALIDATION_MODE). Requiring
+        //    an exact match stops one purchased key from being reused across
+        //    platforms. Cloud keys use the internal CLOUD marker and never need
+        //    a real machine ID; desktop/app keys are bound to one device's ID.
         if (license.licenseMode === 'cloud' && mode !== 'cloud')
             return NextResponse.json({ valid: false, error: 'Cloud license requires cloud mode' });
+        if (license.licenseMode === 'app' && mode !== 'app')
+            return NextResponse.json({ valid: false, error: 'App license can only be used in the Zyqora mobile app' });
+        if (license.licenseMode === 'desktop' && mode)
+            return NextResponse.json({ valid: false, error: 'Desktop license cannot be used on this platform' });
         if (license.licenseMode !== 'cloud' && !cleanMid)
-            return NextResponse.json({ valid: false, error: 'Desktop license requires machineId' });
+            return NextResponse.json({ valid: false, error: `${license.licenseMode === 'app' ? 'App' : 'Desktop'} license requires machineId` });
+        const isCloud = license.licenseMode === 'cloud';
         const primaryCrypto = isCloud ? validateCloudKey(cleanKey) : validateKey(cleanKey, cleanMid);
         let crypto = primaryCrypto;
 

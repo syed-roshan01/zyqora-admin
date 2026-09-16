@@ -33,10 +33,16 @@ export async function POST(req) {
     const dl          = Math.max(1, Math.min(255, parseInt(deviceLimit) || 1));
     const expiryTs    = planToExpiry(plan, customDays);
     const isLifetime  = plan === 'lifetime';
-    const resolvedMachineId = (machineIdOverride && machineIdOverride.trim())
-        ? machineIdOverride.trim().toUpperCase()
-        : oldLicense.machineId;
-    const newKey      = generateKey({ machineId: resolvedMachineId, expiryTs, deviceLimit: dl });
+    // Carry the original license's type through — this used to be dropped
+    // entirely, which silently turned a converted cloud/app trial into a
+    // desktop-style key (and would crash for cloud, whose machineId is null).
+    const licenseMode = oldLicense.licenseMode || 'desktop';
+    const resolvedMachineId = licenseMode === 'cloud'
+        ? null
+        : ((machineIdOverride && machineIdOverride.trim())
+            ? machineIdOverride.trim().toUpperCase()
+            : oldLicense.machineId);
+    const newKey      = generateKey({ machineId: resolvedMachineId || 'CLOUD', expiryTs, deviceLimit: dl, licenseMode });
 
     const priceNum        = Math.max(0, parseFloat(price) || 0);
     const discountedRaw   = (discountedPrice === '' || discountedPrice == null)
@@ -86,6 +92,7 @@ export async function POST(req) {
         price:            priceNum,
         discountedPrice:  discountedNum,
         discountAmount,
+        licenseMode,
         machineId:        resolvedMachineId,
         clientName:       oldLicense.clientName,
         clientPhone:      oldLicense.clientPhone,

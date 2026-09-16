@@ -120,6 +120,7 @@ export default function LicensesPage() {
     const [licenses, setLicenses] = useState([]);
     const [loading,  setLoading]  = useState(true);
     const [search,   setSearch]   = useState('');
+    const [typeFilter, setTypeFilter] = useState('all');
     const [showGen,  setShowGen]  = useState(false);
     const [form,     setForm]     = useState(DEFAULT_FORM);
     const [genBusy,  setGenBusy]  = useState(false);
@@ -165,6 +166,7 @@ export default function LicensesPage() {
 
     const filtered = licenses.filter(l => {
         if (l.revoked && l.revokedReason?.startsWith('Converted to')) return false;
+        if (typeFilter !== 'all' && (l.licenseMode || 'desktop') !== typeFilter) return false;
         const q = search.toLowerCase();
         return !q || l.clientName?.toLowerCase().includes(q) ||
                l.key.toLowerCase().includes(q) ||
@@ -440,7 +442,7 @@ export default function LicensesPage() {
         const nowTs = Math.floor(Date.now() / 1000);
         const headers = [
             'Client Name', 'Phone', 'Email', 'Business Category', 'Website',
-            'Plan', 'Price', 'Discounted Price', 'Discount Amount', 'Device Limit', 'Machine ID', 'Key',
+            'Type', 'Plan', 'Price', 'Discounted Price', 'Discount Amount', 'Device Limit', 'Machine ID', 'Key',
             'Issued By', 'Issued At', 'Expiry', 'Status',
             'Revoked By', 'Revoked At', 'Revoked Reason',
             'Features', 'Notes'
@@ -458,6 +460,7 @@ export default function LicensesPage() {
                 l.clientEmail || '',
                 l.businessCategory || '',
                 l.website || '',
+                l.licenseMode === 'cloud' ? 'Cloud' : l.licenseMode === 'app' ? 'App' : 'Desktop',
                 l.plan || '',
                 toAmountNumber(l.price),
                 toAmountNumber(l.discountedPrice ?? l.price),
@@ -514,7 +517,8 @@ export default function LicensesPage() {
                 `Email: ${l.clientEmail || '-'}`,
                 `Category: ${l.businessCategory || '-'}`,
                 `Website: ${l.website || '-'}`,
-                `Machine: ${l.machineId || '-'}`,
+                `Type: ${l.licenseMode === 'cloud' ? 'Cloud' : l.licenseMode === 'app' ? 'App' : 'Desktop'}`,
+                `Machine: ${l.licenseMode === 'cloud' ? 'N/A' : (l.machineId || '-')}`,
                 `Key: ${l.key || '-'}`,
                 `Features: ${features || '-'}`,
                 `Notes: ${l.notes || '-'}`,
@@ -626,12 +630,33 @@ export default function LicensesPage() {
                         )}
                     </div>
 
+                    <div className="filter-tabs" style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+                        {[
+                            { value: 'all',     label: 'All' },
+                            { value: 'desktop', label: 'Desktop' },
+                            { value: 'cloud',   label: 'Cloud' },
+                            { value: 'app',     label: 'App' },
+                        ].map(t => (
+                            <button
+                                key={t.value}
+                                className="btn btn-sm"
+                                style={typeFilter === t.value
+                                    ? { background: 'rgba(99,102,241,.2)', color: '#818cf8', border: '1px solid rgba(99,102,241,.45)' }
+                                    : { background: 'transparent', color: '#8b93b0', border: '1px solid rgba(255,255,255,.08)' }}
+                                onClick={() => setTypeFilter(t.value)}
+                            >
+                                {t.label}
+                            </button>
+                        ))}
+                    </div>
+
                     <div className="table-wrap">
                         <table>
                             <thead>
                                 <tr>
                                     <th>Client</th>
                                     <th>Key</th>
+                                    <th>Type</th>
                                     <th>Plan</th>
                                     <th>Devices</th>
                                     <th>Expiry / Days Left</th>
@@ -644,9 +669,9 @@ export default function LicensesPage() {
                             </thead>
                             <tbody>
                                 {loading ? (
-                                    <tr><td colSpan={10} className="empty">Loading…</td></tr>
+                                    <tr><td colSpan={11} className="empty">Loading…</td></tr>
                                 ) : filtered.length === 0 ? (
-                                    <tr><td colSpan={10} className="empty">No licenses found</td></tr>
+                                    <tr><td colSpan={11} className="empty">No licenses found</td></tr>
                                 ) : filtered.map(l => {
                                     const days = getDaysLeft(l);
                                     const isExpired = !l.isLifetime && days !== null && days < 0;
@@ -665,6 +690,17 @@ export default function LicensesPage() {
                                                     {copied === l.key ? '✓ Copied!' : l.key.slice(0, 23) + '…'}
                                                 </span>
                                             </td>
+                                            <td>
+                                                <span
+                                                    className="badge"
+                                                    style={{
+                                                        background: l.licenseMode === 'cloud' ? 'rgba(37,211,102,.15)' : l.licenseMode === 'app' ? 'rgba(74,158,255,.15)' : 'rgba(139,146,176,.15)',
+                                                        color: l.licenseMode === 'cloud' ? '#25D366' : l.licenseMode === 'app' ? '#4a9eff' : '#8b93b0',
+                                                    }}
+                                                >
+                                                    {l.licenseMode === 'cloud' ? 'Cloud' : l.licenseMode === 'app' ? 'App' : 'Desktop'}
+                                                </span>
+                                            </td>
                                             <td><span className={`badge badge-plan-${l.plan}`}>{l.plan}</span></td>
                                             <td style={{ textAlign: 'center' }}>{l.deviceLimit}</td>
                                             <td>
@@ -679,7 +715,7 @@ export default function LicensesPage() {
                                                     </>
                                                 )}
                                             </td>
-                                            <td><span className="mono" style={{ fontSize: 11 }}>{l.machineId?.slice(0, 16)}…</span></td>
+                                            <td><span className="mono" style={{ fontSize: 11 }}>{l.licenseMode === 'cloud' ? '—' : `${l.machineId?.slice(0, 16)}…`}</span></td>
                                             <td>{l.issuedByName}</td>
                                             <td>{fmtDate(l.issuedAt)}</td>
                                             <td>
@@ -807,6 +843,7 @@ export default function LicensesPage() {
                                         <select className="form-select" value={form.licenseMode}
                                             onChange={e => setForm(f => ({ ...f, licenseMode: e.target.value, machineId: e.target.value === 'cloud' ? '' : f.machineId }))}>
                                             <option value="desktop">Desktop License (Machine ID)</option>
+                                            <option value="app">App License (Android ID)</option>
                                             <option value="cloud">Cloud License (No Machine ID)</option>
                                         </select>
                                     </div>
@@ -817,6 +854,14 @@ export default function LicensesPage() {
                                             placeholder="Paste from Zyqora app License screen"
                                             style={{ fontFamily: 'Courier New, monospace', fontSize: 12 }} />
                                         <span style={{ fontSize: 11, color: '#3a4560' }}>Found in the Zyqora desktop app → License screen → bottom</span>
+                                    </div>}
+                                    {form.licenseMode === 'app' && <div className="form-group">
+                                        <label className="form-label">Android ID *</label>
+                                        <input className="form-input" required value={form.machineId}
+                                            onChange={e => setForm(f => ({ ...f, machineId: e.target.value }))}
+                                            placeholder="Paste from Zyqora mobile app License screen"
+                                            style={{ fontFamily: 'Courier New, monospace', fontSize: 12 }} />
+                                        <span style={{ fontSize: 11, color: '#3a4560' }}>Found in the Zyqora Android app → License screen — unique per device, so a new phone always needs a new key</span>
                                     </div>}
                                     <div className="form-row">
                                         <div className="form-group">
@@ -1005,6 +1050,20 @@ export default function LicensesPage() {
                                     <div style={{ fontSize: 13, color: '#e2e8f0' }}>{showDetail.clientName}</div>
                                 </div>
                                 <div>
+                                    <div style={{ fontSize: 10, color: '#4a5980', fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Type</div>
+                                    <div>
+                                        <span
+                                            className="badge"
+                                            style={{
+                                                background: showDetail.licenseMode === 'cloud' ? 'rgba(37,211,102,.15)' : showDetail.licenseMode === 'app' ? 'rgba(74,158,255,.15)' : 'rgba(139,146,176,.15)',
+                                                color: showDetail.licenseMode === 'cloud' ? '#25D366' : showDetail.licenseMode === 'app' ? '#4a9eff' : '#8b93b0',
+                                            }}
+                                        >
+                                            {showDetail.licenseMode === 'cloud' ? 'Cloud' : showDetail.licenseMode === 'app' ? 'App' : 'Desktop'}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div>
                                     <div style={{ fontSize: 10, color: '#4a5980', fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Phone</div>
                                     <div style={{ fontSize: 13, color: '#e2e8f0' }}>{showDetail.clientPhone || '—'}</div>
                                 </div>
@@ -1067,8 +1126,8 @@ export default function LicensesPage() {
                                     <div>{showDetail.revoked ? <span className="badge badge-revoked">Revoked</span> : (() => { const d = getDaysLeft(showDetail); return (!showDetail.isLifetime && d !== null && d < 0) ? <span className="badge badge-expired">Expired</span> : <span className="badge badge-active">Active</span>; })()}</div>
                                 </div>
                                 <div style={{ gridColumn: 'span 2' }}>
-                                    <div style={{ fontSize: 10, color: '#4a5980', fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Machine ID</div>
-                                    <div style={{ fontFamily: 'Courier New, monospace', fontSize: 11, color: '#94a3b8', wordBreak: 'break-all', background: 'rgba(255,255,255,.03)', borderRadius: 6, padding: '6px 10px' }}>{showDetail.machineId}</div>
+                                    <div style={{ fontSize: 10, color: '#4a5980', fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>{showDetail.licenseMode === 'app' ? 'Android ID' : 'Machine ID'}</div>
+                                    <div style={{ fontFamily: 'Courier New, monospace', fontSize: 11, color: '#94a3b8', wordBreak: 'break-all', background: 'rgba(255,255,255,.03)', borderRadius: 6, padding: '6px 10px' }}>{showDetail.licenseMode === 'cloud' ? 'Not applicable — cloud license' : showDetail.machineId}</div>
                                 </div>
                                 <div style={{ gridColumn: 'span 2' }}>
                                     <div style={{ fontSize: 10, color: '#4a5980', fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>License Key</div>
