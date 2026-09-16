@@ -10,7 +10,7 @@ export async function POST(req) {
 
     const { clientName, clientPhone, clientEmail, machineId, licenseMode = 'desktop',
             plan, deviceLimit, customDays, notes, price, discountedPrice, features,
-            businessCategory, website, affiliateId, affiliateName } = await req.json();
+            businessCategory, website, affiliateId, affiliateName, reviewAccess } = await req.json();
 
     const DEFAULT_FEATURES = { mobile: true, trustBuilder: true, autoReply: true, chatbot: true, liveChat: true, groupGrabber: true, aiAutomation: true, forms: true };
 
@@ -52,6 +52,12 @@ export async function POST(req) {
         affiliateId:  affiliateId || null,
         affiliateName: affiliateName || null,
         affiliateCommissionAmount: null, // filled below
+        // Store-review / test access only — see validate/route.js. Only ever set true
+        // when explicitly checked in the generate form; absent/false for every normal
+        // customer license, which changes nothing about their validation. Restricted to
+        // super admins server-side too — the UI already hides the checkbox from regular
+        // admins, but that alone wouldn't stop someone calling this API directly.
+        reviewAccess: reviewAccess === true && session.role === 'super',
         issuedBy:     session.sub,
         issuedByName: session.username,
         issuedAt:     Math.floor(Date.now() / 1000),

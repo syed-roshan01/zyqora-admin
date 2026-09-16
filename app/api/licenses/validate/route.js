@@ -20,6 +20,37 @@ export async function POST(req) {
         if (license.revoked)
             return NextResponse.json({ valid: false, error: 'Key has been revoked' });
 
+        // 1b. Reviewer/test access — an explicitly flagged license record (set only via
+        //     the admin panel, never through normal license generation) that skips
+        //     platform-mode and machine-ID binding entirely, so it works on any device.
+        //     Exists solely to satisfy Play Store's "Sign in details" requirement, where
+        //     reviewers test on a device whose ID can't be known in advance and can't be
+        //     contacted mid-review. Scoped to this one flagged record only — every other
+        //     license, of any type, is completely unaffected and still goes through the
+        //     normal binding checks below. Revoke or let it expire (via the license's own
+        //     expiryTs, same as any other key) to shut it off — no app update required.
+        if (license.reviewAccess === true) {
+            const now = Math.floor(Date.now() / 1000);
+            if (!license.isLifetime && license.expiryTs && license.expiryTs < now) {
+                return NextResponse.json({ valid: false, error: 'Key expired' });
+            }
+            if (!license.activated) {
+                await saveLicense({ ...license, activated: true, activatedAt: now });
+            }
+            const secondsLeft = license.isLifetime ? null : Math.max(0, license.expiryTs - now);
+            const daysLeft    = license.isLifetime ? 9999 : Math.floor((secondsLeft ?? 0) / 86400);
+            return NextResponse.json({
+                valid:       true,
+                plan:        license.plan,
+                deviceLimit: license.deviceLimit ?? 1,
+                isLifetime:  license.isLifetime,
+                daysLeft,
+                secondsLeft,
+                expiry:      license.isLifetime ? null : new Date(license.expiryTs * 1000).toISOString(),
+                features:    license.features || null,
+            });
+        }
+
         // 2. Each license type is bound to the platform it was actually issued
         //    for — the desktop app never sends a `mode` field, the cloud build
         //    always sends 'cloud', and the Android app always sends 'app' (see

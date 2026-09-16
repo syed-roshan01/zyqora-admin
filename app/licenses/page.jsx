@@ -35,6 +35,7 @@ const DEFAULT_FORM = {
     customDays: '', notes: '', price: '', discountedPrice: '',
     features: { ...DEFAULT_FEATURES },
     affiliateId: '', affiliateName: '',
+    reviewAccess: false,
 };
 
 function fmtDate(ts) {
@@ -700,6 +701,11 @@ export default function LicensesPage() {
                                                 >
                                                     {l.licenseMode === 'cloud' ? 'Cloud' : l.licenseMode === 'app' ? 'App' : 'Desktop'}
                                                 </span>
+                                                {l.reviewAccess && (
+                                                    <span className="badge" style={{ marginLeft: 4, background: 'rgba(245,158,11,.15)', color: '#f59e0b' }} title="Bypasses device binding — works on any device">
+                                                        Reviewer key
+                                                    </span>
+                                                )}
                                             </td>
                                             <td><span className={`badge badge-plan-${l.plan}`}>{l.plan}</span></td>
                                             <td style={{ textAlign: 'center' }}>{l.deviceLimit}</td>
@@ -859,10 +865,26 @@ export default function LicensesPage() {
                                         <label className="form-label">Android ID *</label>
                                         <input className="form-input" required value={form.machineId}
                                             onChange={e => setForm(f => ({ ...f, machineId: e.target.value }))}
-                                            placeholder="Paste from Zyqora mobile app License screen"
+                                            placeholder={form.reviewAccess ? 'e.g. PLAYSTORE-REVIEWER (not actually checked)' : 'Paste from Zyqora mobile app License screen'}
                                             style={{ fontFamily: 'Courier New, monospace', fontSize: 12 }} />
-                                        <span style={{ fontSize: 11, color: '#3a4560' }}>Found in the Zyqora Android app → License screen — unique per device, so a new phone always needs a new key</span>
+                                        <span style={{ fontSize: 11, color: '#3a4560' }}>
+                                            {form.reviewAccess
+                                                ? 'Not actually validated for a Reviewer/Test Access key — any placeholder text works'
+                                                : 'Found in the Zyqora Android app → License screen — unique per device, so a new phone always needs a new key'}
+                                        </span>
                                     </div>}
+                                    {user?.role === 'super' && (
+                                    <div className="form-group">
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#c9d2e8', cursor: 'pointer' }}>
+                                            <input type="checkbox" checked={form.reviewAccess}
+                                                onChange={e => setForm(f => ({ ...f, reviewAccess: e.target.checked }))} />
+                                            Reviewer / Test Access (bypasses device binding)
+                                        </label>
+                                        <span style={{ fontSize: 11, color: '#3a4560' }}>
+                                            Works on any device — for Play Store review only. Super admin only. Revoke it from the table below once review is done.
+                                        </span>
+                                    </div>
+                                    )}
                                     <div className="form-row">
                                         <div className="form-group">
                                             <label className="form-label">Plan *</label>
@@ -1061,6 +1083,11 @@ export default function LicensesPage() {
                                         >
                                             {showDetail.licenseMode === 'cloud' ? 'Cloud' : showDetail.licenseMode === 'app' ? 'App' : 'Desktop'}
                                         </span>
+                                        {showDetail.reviewAccess && (
+                                            <span className="badge" style={{ marginLeft: 4, background: 'rgba(245,158,11,.15)', color: '#f59e0b' }} title="Bypasses device binding — works on any device">
+                                                Reviewer key
+                                            </span>
+                                        )}
                                     </div>
                                 </div>
                                 <div>
