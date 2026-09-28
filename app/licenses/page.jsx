@@ -756,6 +756,21 @@ export default function LicensesPage() {
                                 <div className="stat-label" style={{ marginBottom: 4 }}>MAX DEVICES / KEY</div>
                                 <div style={{ fontSize: 24, fontWeight: 800, color: '#a78bfa' }}>{wlMaxDevices}</div>
                             </div>
+                            {wlInfo.partnership?.endTs && (
+                                <div>
+                                    <div className="stat-label" style={{ marginBottom: 4 }}>PARTNERSHIP</div>
+                                    <div style={{
+                                        fontSize: 24, fontWeight: 800,
+                                        color: wlInfo.partnership.expired ? '#ef4444'
+                                            : wlInfo.partnership.daysLeft <= 30 ? '#f59e0b' : '#22c55e',
+                                    }}>
+                                        {wlInfo.partnership.expired ? 'Expired' : `${wlInfo.partnership.daysLeft} days`}
+                                    </div>
+                                    <div className="stat-sub">
+                                        {wlInfo.partnership.expired ? 'Generation blocked — contact the administrator to renew' : `until ${fmtDate(wlInfo.partnership.endTs)} — updates live`}
+                                    </div>
+                                </div>
+                            )}
                             {!wlInfo.active && (
                                 <div style={{ color: '#ef4444', fontWeight: 700, fontSize: 13 }}>Account disabled — contact the administrator</div>
                             )}
@@ -1153,13 +1168,21 @@ export default function LicensesPage() {
                                                 {wlInfo.usage.used} of {wlInfo.usage.limit} used
                                             </b>{' '}
                                             — {wlInfo.usage.remaining} remaining. Allowed types, durations, device caps and limits are managed by the administrator and update automatically.
+                                            {wlInfo.partnership?.endTs && (
+                                                <>
+                                                    {' '}Partnership:{' '}
+                                                    <b style={{ color: wlInfo.partnership.expired ? '#ef4444' : wlInfo.partnership.daysLeft <= 30 ? '#f59e0b' : '#22c55e' }}>
+                                                        {wlInfo.partnership.expired ? 'expired' : `${wlInfo.partnership.daysLeft} days left`}
+                                                    </b>.
+                                                </>
+                                            )}
                                         </div>
                                     )}
                                     {genErr && <div className="form-error">{genErr}</div>}
                                 </div>
                                 <div className="modal-footer">
                                     <button type="button" className="btn btn-ghost" onClick={() => setShowGen(false)}>Cancel</button>
-                                    <button type="submit" className="btn btn-primary" disabled={genBusy || (user?.role === 'whitelabel' && wlInfo?.usage && wlInfo.usage.remaining <= 0)}>
+                                    <button type="submit" className="btn btn-primary" disabled={genBusy || (user?.role === 'whitelabel' && wlInfo?.usage && wlInfo.usage.remaining <= 0) || (user?.role === 'whitelabel' && wlInfo?.partnership?.expired)}>
                                         {genBusy ? 'Generating…' : 'Generate Key'}
                                     </button>
                                 </div>

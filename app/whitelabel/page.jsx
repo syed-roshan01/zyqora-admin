@@ -33,6 +33,40 @@ const PLAN_SHORT = {
     monthly: '1M', '3months': '3M', '6months': '6M', yearly: '1Y', custom: 'Custom',
 };
 
+// Partnership term presets — how long the reseller relationship lasts
+const PARTNERSHIP_OPTIONS = [
+    { value: 'none',   label: 'No expiry',   months: null },
+    { value: '12',     label: '1 Year',      months: 12 },
+    { value: '18',     label: '18 Months',   months: 18 },
+    { value: '24',     label: '2 Years',     months: 24 },
+    { value: 'custom', label: 'Custom',      months: null },
+];
+
+function partnershipMonthsFromForm(sel, custom) {
+    if (sel === 'none') return null;
+    if (sel === 'custom') return Math.max(1, Math.min(120, parseInt(custom) || 0));
+    return parseInt(sel);
+}
+
+function partnershipEndPreview(months) {
+    if (!months) return null;
+    const end = Date.now() + Math.round(months * 30.4375) * 86400 * 1000;
+    return new Date(end).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function PartnershipCell({ c }) {
+    if (!c.partnershipEndTs) return <span className="dim">Unlimited</span>;
+    const daysLeft = Math.ceil((c.partnershipEndTs * 1000 - Date.now()) / 86400000);
+    if (daysLeft <= 0) return <span className="badge badge-revoked">Expired</span>;
+    const color = daysLeft <= 30 ? '#ef4444' : daysLeft <= 90 ? '#f59e0b' : '#22c55e';
+    return (
+        <div>
+            <span style={{ fontWeight: 700, color }}>{daysLeft}d left</span>
+            <div className="dim" style={{ fontSize: 11 }}>{fmtDate(c.partnershipEndTs)}</div>
+        </div>
+    );
+}
+
 const MODE_STYLE = {
     desktop: { background: 'rgba(139,146,176,.15)', color: '#8b93b0' },
     cloud:   { background: 'rgba(37,211,102,.15)',  color: '#25D366' },
@@ -106,6 +140,8 @@ const EMPTY_FORM = {
     allowedPlans: [...ALL_PLANS],
     maxDevices: '3',
     licenseLimit: '50',
+    partnershipSel: '12',
+    partnershipCustomMonths: '6',
 };
 
 export default function WhitelabelPage() {
@@ -195,6 +231,7 @@ export default function WhitelabelPage() {
                 ...form,
                 licenseLimit: parseInt(form.licenseLimit) || 0,
                 maxDevices: parseInt(form.maxDevices) || 0,
+                partnershipMonths: partnershipMonthsFromForm(form.partnershipSel, form.partnershipCustomMonths),
             },
         });
         if (!r?.ok) { setErr(r?.data?.error || 'Failed to create'); setBusy(false); return; }
@@ -219,6 +256,8 @@ export default function WhitelabelPage() {
             allowedPlans: (Array.isArray(c.allowedPlans) && c.allowedPlans.length ? c.allowedPlans : ALL_PLANS).filter(p => ALL_PLANS.includes(p)),
             maxDevices: String(c.maxDevices ?? 255),
             licenseLimit: String(c.licenseLimit ?? ''),
+            partnershipSel: c.partnershipMonths == null ? 'none' : ['12', '18', '24'].includes(String(c.partnershipMonths)) ? String(c.partnershipMonths) : 'custom',
+            partnershipCustomMonths: String(c.partnershipMonths ?? '6'),
         });
         setEditErr('');
         setEditSaved(false);
@@ -261,6 +300,7 @@ export default function WhitelabelPage() {
                 allowedPlans: editForm.allowedPlans,
                 maxDevices: parseInt(editForm.maxDevices) || 255,
                 licenseLimit: parseInt(editForm.licenseLimit) || 0,
+                partnershipMonths: partnershipMonthsFromForm(editForm.partnershipSel, editForm.partnershipCustomMonths),
             },
         });
         if (!r?.ok) { setEditErr(r?.data?.error || 'Failed to update'); setEditBusy(false); return; }
@@ -359,6 +399,7 @@ export default function WhitelabelPage() {
                                         <th>Allowed Types</th>
                                         <th>Durations</th>
                                         <th>Max Devices</th>
+                                        <th>Partnership</th>
                                         <th>Limit</th>
                                         <th>Used</th>
                                         <th>Remaining</th>
@@ -399,6 +440,7 @@ export default function WhitelabelPage() {
                                                     </div>
                                                 </td>
                                                 <td style={{ fontWeight: 700, color: '#e2e8f0' }}>{c.maxDevices ?? 255}</td>
+                                                <td><PartnershipCell c={c} /></td>
                                                 <td style={{ fontWeight: 700, color: '#e2e8f0' }}>{c.licenseLimit}</td>
                                                 <td>{c.usedLicenses}</td>
                                                 <td>
@@ -542,6 +584,30 @@ export default function WhitelabelPage() {
                                         </div>
                                     </div>
 
+                                    <div className="form-row">
+                                        <div className="form-group">
+                                            <label className="form-label">Partnership Duration *</label>
+                                            <select className="form-select" value={form.partnershipSel}
+                                                onChange={e => setForm(f => ({ ...f, partnershipSel: e.target.value }))}>
+                                                {PARTNERSHIP_OPTIONS.map(o => (
+                                                    <option key={o.value} value={o.value}>{o.label}</option>
+                                                ))}
+                                            </select>
+                                            <span style={{ fontSize: 11, color: '#3a4560' }}>
+                                                {form.partnershipSel === 'none'
+                                                    ? 'The partnership never expires.'
+                                                    : `Ends ${partnershipEndPreview(partnershipMonthsFromForm(form.partnershipSel, form.partnershipCustomMonths))} — the client sees a live days-remaining countdown, and generation stops after expiry.`}
+                                            </span>
+                                        </div>
+                                        {form.partnershipSel === 'custom' && (
+                                            <div className="form-group">
+                                                <label className="form-label">Custom Months *</label>
+                                                <input className="form-input" type="number" min={1} max={120} required value={form.partnershipCustomMonths}
+                                                    onChange={e => setForm(f => ({ ...f, partnershipCustomMonths: e.target.value }))} placeholder="e.g. 6" />
+                                            </div>
+                                        )}
+                                    </div>
+
                                     <div className="form-group">
                                         <label className="form-label">Notes</label>
                                         <textarea className="form-textarea" value={form.notes}
@@ -633,6 +699,36 @@ export default function WhitelabelPage() {
                                 <span style={{ fontSize: 11, color: '#3a4560', display: 'block', marginTop: -6 }}>
                                     Currently used: {editTarget.usedLicenses ?? 0} licenses. Changing durations, device caps, the limit and allowed types applies to the client's panel immediately — no re-login needed.
                                 </span>
+
+                                <div className="form-row" style={{ marginTop: 12 }}>
+                                    <div className="form-group">
+                                        <label className="form-label">Partnership Duration *</label>
+                                        <select className="form-select" value={editForm.partnershipSel}
+                                            onChange={e => setEditForm(f => ({ ...f, partnershipSel: e.target.value }))}>
+                                            {PARTNERSHIP_OPTIONS.map(o => (
+                                                <option key={o.value} value={o.value}>{o.label}</option>
+                                            ))}
+                                        </select>
+                                        <span style={{ fontSize: 11, color: '#3a4560' }}>
+                                            {editTarget.partnershipEndTs
+                                                ? `Current term: ${editTarget.partnershipMonths} months — ${(() => {
+                                                    const d = Math.ceil((editTarget.partnershipEndTs * 1000 - Date.now()) / 86400000);
+                                                    return d <= 0 ? 'EXPIRED' : `${d} days left (until ${fmtDate(editTarget.partnershipEndTs)})`;
+                                                  })()}. `
+                                                : 'No expiry set. '}
+                                            {editForm.partnershipSel === 'none'
+                                                ? ''
+                                                : `Saving sets a new term ending ${partnershipEndPreview(partnershipMonthsFromForm(editForm.partnershipSel, editForm.partnershipCustomMonths))}.`}
+                                        </span>
+                                    </div>
+                                    {editForm.partnershipSel === 'custom' && (
+                                        <div className="form-group">
+                                            <label className="form-label">Custom Months *</label>
+                                            <input className="form-input" type="number" min={1} max={120} required value={editForm.partnershipCustomMonths}
+                                                onChange={e => setEditForm(f => ({ ...f, partnershipCustomMonths: e.target.value }))} />
+                                        </div>
+                                    )}
+                                </div>
 
                                 <div className="form-group">
                                     <label className="form-label">Notes</label>

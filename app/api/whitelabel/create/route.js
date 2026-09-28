@@ -66,6 +66,16 @@ export async function POST(req) {
             return NextResponse.json({ error: `Max devices must be between 1 and ${MAX_DEVICES}` }, { status: 400 });
     }
 
+    // Partnership term — how long this reseller relationship lasts
+    // (months; null/absent = no expiry)
+    let partnershipMonths = null;
+    if (body?.partnershipMonths !== undefined && body?.partnershipMonths !== null && body?.partnershipMonths !== '') {
+        partnershipMonths = Math.floor(Number(body.partnershipMonths));
+        if (!Number.isFinite(partnershipMonths) || partnershipMonths < 1 || partnershipMonths > 120)
+            return NextResponse.json({ error: 'Partnership duration must be between 1 and 120 months' }, { status: 400 });
+    }
+    const nowTs = Math.floor(Date.now() / 1000);
+
     const passwordHash = await bcrypt.hash(password, 12);
 
     const whitelabel = {
@@ -83,10 +93,13 @@ export async function POST(req) {
         allowedPlans,
         maxDevices,
         licenseLimit,
+        partnershipStartTs: partnershipMonths ? nowTs : null,
+        partnershipMonths,
+        partnershipEndTs: partnershipMonths ? nowTs + Math.round(partnershipMonths * 30.4375) * 86400 : null,
         active: true,
         createdBy: session.sub,
         createdByName: session.username,
-        createdAt: Math.floor(Date.now() / 1000),
+        createdAt: nowTs,
     };
 
     await saveWhitelabel(whitelabel);

@@ -55,6 +55,26 @@ export async function POST(req, { params }) {
         }
     }
 
+    // Partnership term — setting it (re)starts the clock from save time;
+    // sending null clears it back to no expiry.
+    let partnershipStartTs = whitelabel.partnershipStartTs ?? null;
+    let partnershipMonths = whitelabel.partnershipMonths ?? null;
+    let partnershipEndTs = whitelabel.partnershipEndTs ?? null;
+    if (body.partnershipMonths !== undefined) {
+        if (body.partnershipMonths === null || body.partnershipMonths === '') {
+            partnershipStartTs = null;
+            partnershipMonths = null;
+            partnershipEndTs = null;
+        } else {
+            partnershipMonths = Math.floor(Number(body.partnershipMonths));
+            if (!Number.isFinite(partnershipMonths) || partnershipMonths < 1 || partnershipMonths > 120)
+                return NextResponse.json({ error: 'Partnership duration must be between 1 and 120 months' }, { status: 400 });
+            const nowTs = Math.floor(Date.now() / 1000);
+            partnershipStartTs = nowTs;
+            partnershipEndTs = nowTs + Math.round(partnershipMonths * 30.4375) * 86400;
+        }
+    }
+
     const updated = {
         ...whitelabel,
         ...(body.name             !== undefined ? { name:             body.name.trim()             } : {}),
@@ -68,6 +88,9 @@ export async function POST(req, { params }) {
         allowedPlans,
         maxDevices,
         licenseLimit,
+        partnershipStartTs,
+        partnershipMonths,
+        partnershipEndTs,
         updatedAt: Math.floor(Date.now() / 1000),
         updatedBy: session.sub,
         updatedByName: session.username,

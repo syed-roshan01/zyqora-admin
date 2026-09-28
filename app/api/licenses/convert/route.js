@@ -31,6 +31,8 @@ export async function POST(req) {
         whitelabel = await getWhitelabel(session.sub);
         if (!whitelabel || !whitelabel.active)
             return NextResponse.json({ error: 'Whitelabel account is inactive' }, { status: 403 });
+        if (whitelabel.partnershipEndTs && whitelabel.partnershipEndTs <= Math.floor(Date.now() / 1000))
+            return NextResponse.json({ error: 'Your whitelabel partnership has expired. Contact the administrator to renew.' }, { status: 403 });
         const convertedMode = oldLicense.licenseMode || 'desktop';
         const allowed = Array.isArray(whitelabel.allowedModes) ? whitelabel.allowedModes : [];
         if (!allowed.includes(convertedMode))
