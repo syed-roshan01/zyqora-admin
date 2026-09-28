@@ -10,6 +10,8 @@ export async function POST(req, { params }) {
 
     const whitelabel = await getWhitelabel(params.id);
     if (!whitelabel) return NextResponse.json({ error: 'Whitelabel client not found' }, { status: 404 });
+    if (whitelabel.id !== params.id || !whitelabel.username)
+        return NextResponse.json({ error: 'This client record is corrupted. Delete and re-create the client to fix it.' }, { status: 500 });
 
     const updated = { ...whitelabel, active: !whitelabel.active };
     await saveWhitelabel(updated);

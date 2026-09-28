@@ -14,7 +14,7 @@ export async function GET(req) {
     // current quota usage and partnership countdown so the UI can reflect
     // super-admin changes instantly.
     const whitelabel = await getWhitelabel(session.sub);
-    if (whitelabel) {
+    if (whitelabel?.id && whitelabel.username) {
         const { passwordHash, ...safe } = whitelabel;
         const used = await countIssuedLicenses(whitelabel.id);
         const limit = whitelabel.licenseLimit || 0;

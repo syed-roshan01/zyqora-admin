@@ -13,8 +13,11 @@ export async function POST(req, { params }) {
     const whitelabel = await getWhitelabel(params.id);
     if (!whitelabel) return NextResponse.json({ error: 'Whitelabel client not found' }, { status: 404 });
 
-    const issuedLicenses = await countIssuedLicenses(whitelabel.id);
-    await deleteWhitelabel(whitelabel);
+    // Corrupted records (missing their own id) can still be deleted — fall
+    // back to the route id so super admins can clean them up.
+    const target = { ...whitelabel, id: whitelabel.id || params.id };
+    const issuedLicenses = await countIssuedLicenses(target.id);
+    await deleteWhitelabel(target);
 
     await saveLog({
         id: crypto.randomUUID(),
