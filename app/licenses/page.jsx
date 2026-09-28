@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import AppLayout from '@/components/AppLayout';
 import { apiFetch } from '@/lib/apiFetch';
 import Modal from '@/components/Modal';
+import Icon from '@/components/Icons';
 import { TableSkeleton } from '@/components/Skeleton';
 import { useToast } from '@/components/Toast';
 
@@ -139,6 +140,7 @@ export default function LicensesPage() {
     const [loading,  setLoading]  = useState(true);
     const [search,   setSearch]   = useState('');
     const [typeFilter, setTypeFilter] = useState('all');
+    const [statusFilter, setStatusFilter] = useState('all');
     const [page,     setPage]     = useState(1);
     const toast = useToast();
     const [showGen,  setShowGen]  = useState(false);
@@ -251,8 +253,41 @@ export default function LicensesPage() {
         ? PLANS.filter(p => wlAllowedPlans.includes(p.value))
         : PLANS;
 
+    // Converted trial keys are bookkeeping, not inventory — hide them
+    const isConverted = (l) => l.revoked && l.revokedReason?.startsWith('Converted to');
+    const statusOf = (l, nowTs) => {
+        if (l.revoked) return 'revoked';
+        if (!l.isLifetime && (l.expiryTs || 0) <= nowTs) return 'expired';
+        return 'active';
+    };
+    const daysLeftOf = (l, nowTs) => {
+        if (l.isLifetime) return null;
+        return Math.floor((l.expiryTs - nowTs) / 86400);
+    };
+
+    const NOW = Math.floor(Date.now() / 1000);
+
     const filtered = licenses.filter(l => {
-        if (l.revoked && l.revokedReason?.startsWith('Converted to')) return false;
+        if (isConverted(l)) return false;
+        if (typeFilter !== 'all' && (l.licenseMode || 'desktop') !== typeFilter) return false;
+        const q = search.toLowerCase();
+        if (q && !(l.clientName?.toLowerCase().includes(q) ||
+               l.key.toLowerCase().includes(q) ||
+               l.clientPhone?.toLowerCase().includes(q) ||
+               l.machineId?.toLowerCase().includes(q))) return false;
+        if (statusFilter !== 'all') {
+            const st = statusOf(l, NOW);
+            if (statusFilter === 'expiring') {
+                const d = daysLeftOf(l, NOW);
+                if (!(st === 'active' && d !== null && d >= 0 && d <= 7)) return false;
+            } else if (st !== statusFilter) return false;
+        }
+        return true;
+    });
+
+    // Context-aware counts for the status tabs (respect search + type filter)
+    const searchTypeBase = licenses.filter(l => {
+        if (isConverted(l)) return false;
         if (typeFilter !== 'all' && (l.licenseMode || 'desktop') !== typeFilter) return false;
         const q = search.toLowerCase();
         return !q || l.clientName?.toLowerCase().includes(q) ||
@@ -260,9 +295,50 @@ export default function LicensesPage() {
                l.clientPhone?.toLowerCase().includes(q) ||
                l.machineId?.toLowerCase().includes(q);
     });
+    const tabCounts = searchTypeBase.reduce((acc, l) => {
+        const st = statusOf(l, NOW);
+        acc[st] = (acc[st] || 0) + 1;
+        if (st === 'active') {
+            const d = daysLeftOf(l, NOW);
+            if (d !== null && d >= 0 && d <= 7) acc.expiring = (acc.expiring || 0) + 1;
+        }
+        return acc;
+    }, { active: 0, expired: 0, revoked: 0, expiring: 0 });
+
+    // Page-level insights for the summary strip
+    const visibleInventory = licenses.filter(l => !isConverted(l));
+    const totalKeys = visibleInventory.length;
+    const activeKeys = visibleInventory.filter(l => statusOf(l, NOW) === 'active').length;
+    const expiringKeys = visibleInventory.filter(l => {
+        if (statusOf(l, NOW) !== 'active') return false;
+        const d = daysLeftOf(l, NOW);
+        return d !== null && d >= 0 && d <= 7;
+    }).length;
+    const revokedKeys = visibleInventory.filter(l => l.revoked).length;
+    const revenueTotal = visibleInventory
+        .filter(l => !l.revoked)
+        .reduce((s, l) => s + Math.max(0, Number(l.discountedPrice ?? l.price) || 0), 0);
+    const fmtCompactINR = (n) => '₹' + new Intl.NumberFormat('en-IN', { notation: 'compact', maximumFractionDigits: 1 }).format(n);
+
+    // Deterministic gradient avatar per client
+    const AVATAR_GRADS = [
+        'linear-gradient(135deg, #8b5cf6, #6d28d9)',
+        'linear-gradient(135deg, #3b82f6, #1d4ed8)',
+        'linear-gradient(135deg, #14b8a6, #0f766e)',
+        'linear-gradient(135deg, #f59e0b, #b45309)',
+        'linear-gradient(135deg, #ec4899, #9d174d)',
+        'linear-gradient(135deg, #6366f1, #4338ca)',
+    ];
+    const clientAvatar = (l) => {
+        const seed = l.clientName || l.key || '?';
+        let h = 0;
+        for (const ch of seed) h = (h * 31 + ch.charCodeAt(0)) % 997;
+        const initials = seed.split(/\s+/).map(w => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
+        return { grad: AVATAR_GRADS[h % AVATAR_GRADS.length], initials: initials || '?' };
+    };
 
     // Reset to the first page whenever the filters change
-    useEffect(() => { setPage(1); }, [search, typeFilter]);
+    useEffect(() => { setPage(1); }, [search, typeFilter, statusFilter]);
 
     const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
     const safePage = Math.min(page, totalPages);
@@ -692,7 +768,10 @@ export default function LicensesPage() {
                 <div className="page-header">
                     <div>
                         <div className="page-title">Licenses</div>
-                        <div className="page-subtitle">{licenses.length} total issued</div>
+                        <div className="page-subtitle">
+                            {totalKeys} key{totalKeys !== 1 ? 's' : ''} under your watch
+                            {expiringKeys > 0 ? ` — ${expiringKeys} need${expiringKeys === 1 ? 's' : ''} renewal this week` : ' — all calm'}
+                        </div>
                     </div>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                         <select
@@ -710,7 +789,7 @@ export default function LicensesPage() {
                             disabled={exportBusy || licenses.length === 0}
                             title={licenses.length === 0 ? 'No licenses to export' : 'Download full license data'}
                         >
-                            {exportBusy ? 'Preparing…' : 'Download'}
+                            {exportBusy ? 'Preparing…' : 'Export'}
                         </button>
                         <button className="btn btn-primary" onClick={() => { setShowGen(true); setGenKey(''); setGeneratedLicense(null); setForm(DEFAULT_FORM); }}>
                             + Generate Key
@@ -719,6 +798,44 @@ export default function LicensesPage() {
                 </div>
 
                 <div className="page-body">
+                    {/* Insight strip */}
+                    <div className="db-strip db-in">
+                        <div className="db-pill">
+                            <div className="db-pill-icon"><Icon name="key" size={14} /></div>
+                            <div>
+                                <div className="db-pill-num">{totalKeys}</div>
+                                <div className="db-pill-lab">keys issued</div>
+                            </div>
+                        </div>
+                        <div className="db-pill">
+                            <div className="db-pill-icon" data-tone="green"><Icon name="check" size={14} /></div>
+                            <div>
+                                <div className="db-pill-num">{activeKeys}</div>
+                                <div className="db-pill-lab">active now</div>
+                            </div>
+                        </div>
+                        <div className="db-pill">
+                            <div className="db-pill-icon" data-tone={expiringKeys > 0 ? 'amber' : undefined}><Icon name="clock" size={14} /></div>
+                            <div>
+                                <div className="db-pill-num">{expiringKeys}</div>
+                                <div className="db-pill-lab">expiring ≤ 7 days</div>
+                            </div>
+                        </div>
+                        <div className="db-pill">
+                            <div className="db-pill-icon" data-tone="red"><Icon name="shield" size={14} /></div>
+                            <div>
+                                <div className="db-pill-num">{revokedKeys}</div>
+                                <div className="db-pill-lab">revoked</div>
+                            </div>
+                        </div>
+                        <div className="db-pill">
+                            <div className="db-pill-icon" data-tone="teal"><Icon name="rupee" size={14} /></div>
+                            <div>
+                                <div className="db-pill-num">{fmtCompactINR(revenueTotal)}</div>
+                                <div className="db-pill-lab">revenue booked</div>
+                            </div>
+                        </div>
+                    </div>
                     {/* Whitelabel quota card — live values from the super admin's settings */}
                     {user?.role === 'whitelabel' && wlInfo && (
                         <div className="card" style={{ marginBottom: 16, display: 'flex', flexWrap: 'wrap', gap: 32, alignItems: 'center' }}>
@@ -780,35 +897,55 @@ export default function LicensesPage() {
                         </div>
                     )}
 
-                    {/* Search */}
-                    <div className="search-bar" style={{ marginBottom: 16 }}>
-                        <input
-                            className="form-input search-input"
-                            placeholder="Search by client, key, phone or machine ID…"
-                            value={search}
-                            onChange={e => setSearch(e.target.value)}
-                        />
-                        {search && (
-                            <button className="btn btn-ghost btn-sm" onClick={() => setSearch('')}>Clear</button>
-                        )}
+                    {/* Toolbar: search + type segmented control */}
+                    <div className="lic-toolbar db-in">
+                        <div className="search-bar" style={{ marginBottom: 0, flex: 1 }}>
+                            <input
+                                className="form-input search-input"
+                                style={{ maxWidth: 'none' }}
+                                placeholder="Search by client, key, phone or machine ID…"
+                                value={search}
+                                onChange={e => setSearch(e.target.value)}
+                            />
+                            {search && (
+                                <button className="btn btn-ghost btn-sm" onClick={() => setSearch('')}>Clear</button>
+                            )}
+                        </div>
+                        <div className="seg">
+                            {[
+                                { value: 'all',     label: 'All types' },
+                                { value: 'desktop', label: '🖥 Desktop' },
+                                { value: 'cloud',   label: '☁ Cloud' },
+                                { value: 'app',     label: '📱 App' },
+                            ].map(t => (
+                                <button
+                                    key={t.value}
+                                    className={`seg-btn${typeFilter === t.value ? ' on' : ''}`}
+                                    onClick={() => setTypeFilter(t.value)}
+                                >
+                                    {t.label}
+                                </button>
+                            ))}
+                        </div>
                     </div>
 
-                    <div className="filter-tabs" style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+                    {/* Status tabs with live counts */}
+                    <div className="lic-status-tabs db-in">
                         {[
-                            { value: 'all',     label: 'All' },
-                            { value: 'desktop', label: 'Desktop' },
-                            { value: 'cloud',   label: 'Cloud' },
-                            { value: 'app',     label: 'App' },
+                            { value: 'all',       label: 'All',          count: searchTypeBase.length, dot: null },
+                            { value: 'active',    label: 'Active',       count: tabCounts.active,      dot: '#22c55e' },
+                            { value: 'expiring',  label: 'Expiring soon',count: tabCounts.expiring,    dot: '#f59e0b' },
+                            { value: 'expired',   label: 'Expired',     count: tabCounts.expired,     dot: '#64748b' },
+                            { value: 'revoked',   label: 'Revoked',     count: tabCounts.revoked,     dot: '#ef4444' },
                         ].map(t => (
                             <button
                                 key={t.value}
-                                className="btn btn-sm"
-                                style={typeFilter === t.value
-                                    ? { background: 'rgba(99,102,241,.2)', color: '#818cf8', border: '1px solid rgba(99,102,241,.45)' }
-                                    : { background: 'transparent', color: '#8b93b0', border: '1px solid rgba(255,255,255,.08)' }}
-                                onClick={() => setTypeFilter(t.value)}
+                                className={`lic-tab${statusFilter === t.value ? ' on' : ''}`}
+                                onClick={() => setStatusFilter(t.value)}
                             >
+                                {t.dot && <span className="lic-tab-dot" style={{ background: t.dot }} />}
                                 {t.label}
+                                <span className="lic-tab-count">{t.count}</span>
                             </button>
                         ))}
                     </div>
@@ -816,86 +953,112 @@ export default function LicensesPage() {
                     {loading ? (
                         <TableSkeleton rows={8} />
                     ) : filtered.length === 0 ? (
-                        <div className="table-wrap"><table><tbody>
-                            <tr><td colSpan={11} className="empty">
-                                No licenses found{search || typeFilter !== 'all' ? ' for the current filters' : ' yet'}
-                            </td></tr>
-                        </tbody></table></div>
+                        <div className="lic-empty db-in">
+                            <div className="lic-empty-icon">🔑</div>
+                            <div className="lic-empty-title">
+                                {licenses.length === 0 ? 'No licenses yet' : 'Nothing matches these filters'}
+                            </div>
+                            <div className="lic-empty-sub">
+                                {licenses.length === 0
+                                    ? 'Generate your first key and it will show up here with live status.'
+                                    : 'Try a different search, type or status — or clear everything and start fresh.'}
+                            </div>
+                            {licenses.length > 0 && (search || typeFilter !== 'all' || statusFilter !== 'all') && (
+                                <button className="btn btn-ghost btn-sm" onClick={() => { setSearch(''); setTypeFilter('all'); setStatusFilter('all'); }}>
+                                    Clear all filters
+                                </button>
+                            )}
+                        </div>
                     ) : (
                     <>
                     <div className="table-wrap">
-                        <table>
+                        <table className="licenses-table">
                             <thead>
                                 <tr>
                                     <th>Client</th>
                                     <th>Key</th>
                                     <th>Type</th>
                                     <th>Plan</th>
-                                    <th>Devices</th>
-                                    <th>Expiry / Days Left</th>
+                                    <th style={{ textAlign: 'center' }}>Devices</th>
+                                    <th>Validity</th>
                                     <th>Machine ID</th>
-                                    <th>Issued By</th>
-                                    <th>Issued At</th>
+                                    <th>Issued</th>
                                     <th>Status</th>
-                                    <th>Actions</th>
+                                    <th></th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {paged.map(l => {
-                                    const days = getDaysLeft(l);
+                                {paged.map((l, idx) => {
+                                    const days = daysLeftOf(l, NOW);
                                     const isExpired = !l.isLifetime && days !== null && days < 0;
+                                    const needsRenewal = !l.revoked && !isExpired && days !== null && days >= 0 && days <= 7;
+                                    const { grad, initials } = clientAvatar(l);
                                     return (
-                                        <tr key={l.key}>
+                                        <tr key={`${safePage}-${l.key}`} className={needsRenewal ? 'lic-row-soon' : ''} style={{ animationDelay: `${Math.min(idx, 12) * 30}ms` }}>
                                             <td>
-                                                <div className="bold" style={{ cursor: 'pointer', color: '#a78bfa', textDecoration: 'underline', textDecorationStyle: 'dotted' }} onClick={() => setShowDetail(l)}>{l.clientName}</div>
-                                                {l.clientPhone && <div className="dim">{l.clientPhone}</div>}
+                                                <div className="lic-client">
+                                                    <div className="lic-avatar-sm" style={{ background: grad }}>{initials}</div>
+                                                    <div style={{ minWidth: 0 }}>
+                                                        <div className="lic-client-name" onClick={() => setShowDetail(l)} title="Open full details">
+                                                            {l.clientName || '—'}
+                                                        </div>
+                                                        {l.clientPhone && <div className="lic-client-sub">{l.clientPhone}</div>}
+                                                    </div>
+                                                </div>
                                             </td>
                                             <td>
-                                                <span
-                                                    className="mono copy-key"
-                                                    title="Click to copy"
-                                                    onClick={() => copyKey(l.key)}
-                                                >
-                                                    {copied === l.key ? '✓ Copied!' : l.key.slice(0, 23) + '…'}
-                                                </span>
+                                                <button className="key-copy" title="Click to copy" onClick={() => copyKey(l.key)}>
+                                                    {copied === l.key ? '✓ Copied!' : l.key.slice(0, 18) + '…'}
+                                                </button>
                                             </td>
                                             <td>
-                                                <span
-                                                    className="badge"
-                                                    style={{
-                                                        background: l.licenseMode === 'cloud' ? 'rgba(37,211,102,.15)' : l.licenseMode === 'app' ? 'rgba(74,158,255,.15)' : 'rgba(139,146,176,.15)',
-                                                        color: l.licenseMode === 'cloud' ? '#25D366' : l.licenseMode === 'app' ? '#4a9eff' : '#8b93b0',
-                                                    }}
-                                                >
-                                                    {l.licenseMode === 'cloud' ? 'Cloud' : l.licenseMode === 'app' ? 'App' : 'Desktop'}
-                                                </span>
-                                                {l.reviewAccess && (
-                                                    <span className="badge" style={{ marginLeft: 4, background: 'rgba(245,158,11,.15)', color: '#f59e0b' }} title="Bypasses device binding — works on any device">
-                                                        Reviewer key
+                                                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+                                                    <span
+                                                        className="badge"
+                                                        style={{
+                                                            background: l.licenseMode === 'cloud' ? 'rgba(37,211,102,.15)' : l.licenseMode === 'app' ? 'rgba(74,158,255,.15)' : 'rgba(139,146,176,.15)',
+                                                            color: l.licenseMode === 'cloud' ? '#25D366' : l.licenseMode === 'app' ? '#4a9eff' : '#8b93b0',
+                                                        }}
+                                                    >
+                                                        {l.licenseMode === 'cloud' ? 'Cloud' : l.licenseMode === 'app' ? 'App' : 'Desktop'}
                                                     </span>
-                                                )}
+                                                    {l.reviewAccess && (
+                                                        <span className="badge" style={{ background: 'rgba(245,158,11,.15)', color: '#f59e0b' }} title="Bypasses device binding — works on any device">
+                                                            Reviewer
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </td>
                                             <td><span className={`badge badge-plan-${l.plan}`}>{l.plan}</span></td>
-                                            <td style={{ textAlign: 'center' }}>{l.deviceLimit}</td>
+                                            <td style={{ textAlign: 'center', fontWeight: 600 }}>{l.deviceLimit}</td>
                                             <td>
                                                 {l.isLifetime ? (
                                                     <span style={{ color: '#a78bfa', fontWeight: 600 }}>Lifetime</span>
                                                 ) : (
-                                                    <>
-                                                        <div>{fmtDate(l.expiryTs)}</div>
-                                                        <div className="dim" style={{ color: days !== null && days < 7 && days >= 0 ? '#f59e0b' : '' }}>
-                                                            {days !== null && days >= 0 ? `${days}d left` : days !== null ? 'Expired' : ''}
-                                                        </div>
-                                                    </>
+                                                    <div>
+                                                        <div style={{ fontSize: 12.5 }}>{fmtDate(l.expiryTs)}</div>
+                                                        {days !== null && days >= 0 && (
+                                                            <span className={`days-chip${needsRenewal ? ' soon' : ''}`} style={needsRenewal ? {} : { background: 'rgba(255,255,255,.04)', color: 'var(--text-ghost)', border: '1px solid var(--border)' }}>
+                                                                {days}d left
+                                                            </span>
+                                                        )}
+                                                        {days !== null && days < 0 && <span className="days-chip urgent">Expired</span>}
+                                                    </div>
                                                 )}
                                             </td>
                                             <td><span className="mono" style={{ fontSize: 11 }}>{l.licenseMode === 'cloud' || !l.machineId ? '—' : `${l.machineId.slice(0, 16)}…`}</span></td>
-                                            <td>{l.issuedByName}</td>
-                                            <td>{fmtDate(l.issuedAt)}</td>
+                                            <td>
+                                                <div style={{ fontSize: 12.5 }}>{l.issuedByName}</div>
+                                                <div className="lic-client-sub">{fmtDate(l.issuedAt)}</div>
+                                            </td>
                                             <td>
                                                 {l.revoked   && <span className="badge badge-revoked">Revoked</span>}
                                                 {!l.revoked && isExpired && <span className="badge badge-expired">Expired</span>}
-                                                {!l.revoked && !isExpired && <span className="badge badge-active">Active</span>}
+                                                {!l.revoked && !isExpired && (
+                                                    <span className="badge badge-active">
+                                                        <span className="lic-dot" />Active
+                                                    </span>
+                                                )}
                                             </td>
                                             <td>
                                                 <div style={{ display: 'flex', gap: 6 }}>
@@ -963,13 +1126,42 @@ export default function LicensesPage() {
                     onClose={() => setShowGen(false)}
                     busy={genBusy}
                     backdropClose={!genKey}
+                    maxWidth={560}
                 >
                         {genKey ? (
                             <div className="modal-body">
-                                <div style={{ background: '#161c2d', border: '1px solid #7c3aed', borderRadius: 10, padding: '16px 18px' }}>
-                                    <div style={{ fontSize: 11, color: '#4a5980', marginBottom: 6, fontWeight: 600 }}>LICENSE KEY</div>
-                                    <div style={{ fontFamily: 'Courier New, monospace', fontSize: 15, color: '#a78bfa', letterSpacing: '.5px', wordBreak: 'break-all' }}>{genKey}</div>
+                                <div className="gen-success">
+                                    <div className="gen-success-badge">✓</div>
+                                    <div className="gen-success-title">Key is ready</div>
+                                    <div className="gen-success-sub">
+                                        {generatedLicense?.clientName
+                                            ? `Hand this key to ${generatedLicense.clientName} — it's active the moment they activate it.`
+                                            : 'Share it with your client — it activates on first use.'}
+                                    </div>
                                 </div>
+                                <div className="gen-key-box">
+                                    <div className="gen-key-label">LICENSE KEY</div>
+                                    <div className="gen-key-value">{genKey}</div>
+                                </div>
+                                {generatedLicense && (
+                                    <div className="gen-meta">
+                                        <span className="badge" style={{ background: 'rgba(37,211,102,.15)', color: '#25D366' }}>
+                                            {generatedLicense.licenseMode === 'cloud' ? 'Cloud' : generatedLicense.licenseMode === 'app' ? 'App' : 'Desktop'}
+                                        </span>
+                                        <span className={`badge badge-plan-${generatedLicense.plan}`}>{generatedLicense.plan}</span>
+                                        <span className="badge" style={{ background: 'rgba(139,92,246,.12)', color: '#a78bfa' }}>
+                                            {generatedLicense.deviceLimit} device{generatedLicense.deviceLimit !== 1 ? 's' : ''}
+                                        </span>
+                                        {!generatedLicense.isLifetime && (
+                                            <span className="badge" style={{ background: 'rgba(255,255,255,.05)', color: '#94a3b8' }}>
+                                                {generatedLicense.expiryTs ? `until ${fmtDate(generatedLicense.expiryTs)}` : ''}
+                                            </span>
+                                        )}
+                                        {generatedLicense.isLifetime && (
+                                            <span className="badge" style={{ background: 'rgba(167,139,250,.12)', color: '#a78bfa' }}>Lifetime</span>
+                                        )}
+                                    </div>
+                                )}
                                 <button
                                     className="btn btn-primary"
                                     style={{ width: '100%' }}
@@ -996,38 +1188,44 @@ export default function LicensesPage() {
                         ) : (
                             <form onSubmit={generate}>
                                 <div className="modal-body">
-                                    <div className="form-row">
-                                        <div className="form-group">
-                                            <label className="form-label">Client Name *</label>
-                                            <input className="form-input" required value={form.clientName}
-                                                onChange={e => setForm(f => ({ ...f, clientName: e.target.value }))} placeholder="e.g. John Doe" />
+                                    <div className="form-section">
+                                        <div className="form-section-title">👤 Client details</div>
+                                        <div className="form-row">
+                                            <div className="form-group">
+                                                <label className="form-label">Client Name *</label>
+                                                <input className="form-input" required value={form.clientName}
+                                                    onChange={e => setForm(f => ({ ...f, clientName: e.target.value }))} placeholder="e.g. John Doe" />
+                                            </div>
+                                            <div className="form-group">
+                                                <label className="form-label">WhatsApp / Phone</label>
+                                                <input className="form-input" value={form.clientPhone}
+                                                    onChange={e => setForm(f => ({ ...f, clientPhone: e.target.value }))} placeholder="+91 9876543210" />
+                                            </div>
                                         </div>
                                         <div className="form-group">
-                                            <label className="form-label">WhatsApp / Phone</label>
-                                            <input className="form-input" value={form.clientPhone}
-                                                onChange={e => setForm(f => ({ ...f, clientPhone: e.target.value }))} placeholder="+91 9876543210" />
+                                            <label className="form-label">Email</label>
+                                            <input className="form-input" type="email" value={form.clientEmail}
+                                                onChange={e => setForm(f => ({ ...f, clientEmail: e.target.value }))} placeholder="client@email.com" />
+                                        </div>
+                                        <div className="form-row">
+                                            <div className="form-group">
+                                                <label className="form-label">Business Category</label>
+                                                <input className="form-input" value={form.businessCategory}
+                                                    onChange={e => setForm(f => ({ ...f, businessCategory: e.target.value }))} placeholder="e.g. E-commerce, Real Estate" />
+                                            </div>
+                                            <div className="form-group">
+                                                <label className="form-label">Website</label>
+                                                <input className="form-input" value={form.website}
+                                                    onChange={e => setForm(f => ({ ...f, website: e.target.value }))} placeholder="https://example.com" />
+                                            </div>
                                         </div>
                                     </div>
-                                    <div className="form-group">
-                                        <label className="form-label">Email</label>
-                                        <input className="form-input" type="email" value={form.clientEmail}
-                                            onChange={e => setForm(f => ({ ...f, clientEmail: e.target.value }))} placeholder="client@email.com" />
-                                    </div>
-                                    <div className="form-row">
+
+                                    <div className="form-section">
+                                        <div className="form-section-title">🔑 License setup</div>
                                         <div className="form-group">
-                                            <label className="form-label">Business Category</label>
-                                            <input className="form-input" value={form.businessCategory}
-                                                onChange={e => setForm(f => ({ ...f, businessCategory: e.target.value }))} placeholder="e.g. E-commerce, Real Estate" />
-                                        </div>
-                                        <div className="form-group">
-                                            <label className="form-label">Website</label>
-                                            <input className="form-input" value={form.website}
-                                                onChange={e => setForm(f => ({ ...f, website: e.target.value }))} placeholder="https://example.com" />
-                                        </div>
-                                    </div>
-                                    <div className="form-group">
-                                        <label className="form-label">License Type *</label>
-                                        <select className="form-select" value={form.licenseMode}
+                                            <label className="form-label">License Type *</label>
+                                            <select className="form-select" value={form.licenseMode}
                                             onChange={e => setForm(f => ({ ...f, licenseMode: e.target.value, machineId: e.target.value === 'cloud' ? '' : f.machineId }))}>
                                             {[
                                                 { value: 'desktop', label: 'Desktop License (Machine ID)' },
@@ -1102,9 +1300,13 @@ export default function LicensesPage() {
                                                 onChange={e => setForm(f => ({ ...f, customDays: e.target.value }))} placeholder="e.g. 45" />
                                         </div>
                                     )}
-                                    <div className="form-row">
-                                        <div className="form-group">
-                                            <label className="form-label">Price (₹)</label>
+                                    </div>
+
+                                    <div className="form-section">
+                                        <div className="form-section-title">💰 Pricing & notes</div>
+                                        <div className="form-row">
+                                            <div className="form-group">
+                                                <label className="form-label">Price (₹)</label>
                                             <input className="form-input" type="number" min="0" step="0.01" value={form.price}
                                                 onChange={e => setForm(f => ({ ...f, price: e.target.value }))}
                                                 placeholder="e.g. 999" />
@@ -1140,9 +1342,12 @@ export default function LicensesPage() {
                                             </select>
                                         </div>
                                     )}
-                                    {/* Feature Flags */}
-                                    <div className="form-group">
-                                        <label className="form-label" style={{ marginBottom: 8 }}>Features Included</label>
+                                    </div>
+
+                                    <div className="form-section">
+                                        <div className="form-section-title">🧩 Features included</div>
+                                        <div className="form-group">
+                                            <label className="form-label" style={{ marginBottom: 8 }}>Features Included</label>
                                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
                                             {FEATURE_OPTIONS.map(({ key, label, sub }) => (
                                                 <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '8px 10px', borderRadius: 8, border: '1px solid', borderColor: form.features[key] ? '#7c3aed' : '#252d42', background: form.features[key] ? 'rgba(124,58,237,.1)' : 'transparent', transition: 'all .15s', userSelect: 'none' }}>
@@ -1160,6 +1365,7 @@ export default function LicensesPage() {
                                             style={{ marginTop: 6, background: 'none', border: 'none', color: '#4a5980', fontSize: 11, cursor: 'pointer', textAlign: 'left', padding: 0 }}>
                                             ↺ Select all
                                         </button>
+                                        </div>
                                     </div>
                                     {user?.role === 'whitelabel' && wlInfo?.usage && (
                                         <div style={{ fontSize: 12, color: '#94a3b8', background: '#161c2d', border: '1px solid #252d42', borderRadius: 8, padding: '8px 12px' }}>
