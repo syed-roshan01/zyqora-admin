@@ -3,6 +3,9 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import AppLayout from '@/components/AppLayout';
 import { apiFetch } from '@/lib/apiFetch';
+import Modal from '@/components/Modal';
+import { TableSkeleton } from '@/components/Skeleton';
+import { useToast } from '@/components/Toast';
 
 function fmtDate(ts) {
     if (!ts) return '—';
@@ -91,6 +94,8 @@ export default function WhitelabelPage() {
     const [viewData, setViewData] = useState(null);
     const [licsLoading, setLicsLoading] = useState(false);
 
+    const toast = useToast();
+
     useEffect(() => {
         try {
             const u = localStorage.getItem('zyqora_admin_user');
@@ -140,6 +145,7 @@ export default function WhitelabelPage() {
         if (!r?.ok) { setErr(r?.data?.error || 'Failed to create'); setBusy(false); return; }
         setCreated({ username: form.username, password: form.password, name: form.name });
         setBusy(false);
+        toast.success(`Whitelabel client "${form.name}" created`);
         load();
     };
 
@@ -191,12 +197,18 @@ export default function WhitelabelPage() {
         if (!r?.ok) { setEditErr(r?.data?.error || 'Failed to update'); setEditBusy(false); return; }
         setEditSaved(true);
         setEditBusy(false);
+        toast.success('Client updated — changes are live');
         load();
     };
 
     const toggleActive = async (c) => {
         const r = await apiFetch(`/api/whitelabel/${c.id}/toggle`, { method: 'POST' });
-        if (r?.ok) load();
+        if (r?.ok) {
+            toast.success(r.data.active ? `${c.name} enabled` : `${c.name} disabled`);
+            load();
+        } else {
+            toast.error(r?.data?.error || 'Failed to update status');
+        }
     };
 
     const changePw = async (e) => {
@@ -211,6 +223,7 @@ export default function WhitelabelPage() {
         setPwBusy(false);
         setPwTarget(null);
         setNewPw('');
+        toast.success(`Password reset for ${pwTarget.name}`);
     };
 
     const viewLicenses = async (c) => {
@@ -260,7 +273,7 @@ export default function WhitelabelPage() {
 
                     {/* Table */}
                     {loading ? (
-                        <div className="empty">Loading…</div>
+                        <TableSkeleton rows={5} />
                     ) : clients.length === 0 ? (
                         <div className="empty">
                             No whitelabel clients yet.<br />
@@ -349,12 +362,13 @@ export default function WhitelabelPage() {
 
             {/* ── Create Modal ─────────────────────────────────────────── */}
             {showCreate && (
-                <div className="modal-overlay" onClick={e => e.target === e.currentTarget && !busy && !created && setShowCreate(false)}>
-                    <div className="modal" style={{ maxWidth: 580 }}>
-                        <div className="modal-header">
-                            <span className="modal-title">{created ? '✓ Whitelabel Client Created' : 'Add Whitelabel Client'}</span>
-                            <button className="modal-close" onClick={() => setShowCreate(false)} disabled={busy}>×</button>
-                        </div>
+                <Modal
+                    title={created ? '✓ Whitelabel Client Created' : 'Add Whitelabel Client'}
+                    onClose={() => setShowCreate(false)}
+                    maxWidth={580}
+                    busy={busy}
+                    backdropClose={!created}
+                >
 
                         {created ? (
                             <div className="modal-body">
@@ -453,18 +467,12 @@ export default function WhitelabelPage() {
                                 </div>
                             </form>
                         )}
-                    </div>
-                </div>
+                </Modal>
             )}
 
             {/* ── Edit Modal ───────────────────────────────────────────── */}
             {editTarget && editForm && (
-                <div className="modal-overlay">
-                    <div className="modal" style={{ maxWidth: 580 }}>
-                        <div className="modal-header">
-                            <span className="modal-title">✎ Edit — {editTarget.name}</span>
-                            <button className="modal-close" onClick={() => setEditTarget(null)} disabled={editBusy}>×</button>
-                        </div>
+                <Modal title={`✎ Edit — ${editTarget.name}`} onClose={() => setEditTarget(null)} maxWidth={580} busy={editBusy}>
                         <form onSubmit={saveEdit}>
                             <div className="modal-body">
                                 <div className="form-group">
@@ -539,18 +547,12 @@ export default function WhitelabelPage() {
                                 </button>
                             </div>
                         </form>
-                    </div>
-                </div>
+                </Modal>
             )}
 
             {/* ── Reset Password Modal ─────────────────────────────────── */}
             {pwTarget && (
-                <div className="modal-overlay">
-                    <div className="modal" style={{ maxWidth: 420 }}>
-                        <div className="modal-header">
-                            <span className="modal-title">🔑 Reset Password — {pwTarget.name}</span>
-                            <button className="modal-close" onClick={() => setPwTarget(null)} disabled={pwBusy}>×</button>
-                        </div>
+                <Modal title={`🔑 Reset Password — ${pwTarget.name}`} onClose={() => setPwTarget(null)} maxWidth={420} busy={pwBusy}>
                         <form onSubmit={changePw}>
                             <div className="modal-body">
                                 <div className="form-group">
@@ -568,18 +570,12 @@ export default function WhitelabelPage() {
                                 </button>
                             </div>
                         </form>
-                    </div>
-                </div>
+                </Modal>
             )}
 
             {/* ── Client Licenses Modal ────────────────────────────────── */}
             {viewTarget && (
-                <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setViewTarget(null)}>
-                    <div className="modal" style={{ maxWidth: 900 }}>
-                        <div className="modal-header">
-                            <span className="modal-title">Licenses issued by {viewTarget.name}</span>
-                            <button className="modal-close" onClick={() => setViewTarget(null)}>×</button>
-                        </div>
+                <Modal title={`Licenses issued by ${viewTarget.name}`} onClose={() => setViewTarget(null)} maxWidth={900}>
                         <div className="modal-body">
                             {viewData ? (
                                 <>
@@ -657,8 +653,7 @@ export default function WhitelabelPage() {
                             <button className="btn btn-ghost" onClick={() => setViewTarget(null)}>Close</button>
                             <button className="btn btn-primary" onClick={() => { setViewTarget(null); openEdit(viewTarget); }}>✎ Edit Client</button>
                         </div>
-                    </div>
-                </div>
+                </Modal>
             )}
         </AppLayout>
     );

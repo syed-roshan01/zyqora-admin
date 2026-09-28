@@ -3,25 +3,27 @@ import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { getToken, clearToken, apiFetch } from '@/lib/apiFetch';
+import Icon from '@/components/Icons';
 
 const ALL_NAV = [
-    { href: '/dashboard',  icon: '◈',  label: 'Dashboard' },
-    { href: '/licenses',   icon: '⚿',  label: 'Licenses'  },
-    { href: '/sales',      icon: '₹',  label: 'Sales'     },
-    { href: '/expenses',   icon: '₹-', label: 'Expenses'  },
-    { href: '/admins',       icon: '⊛',  label: 'Admins',         superOnly: true },
-    { href: '/whitelabel',   icon: '◇',  label: 'Whitelabel',     superOnly: true },
-    { href: '/affiliates',   icon: '◎',  label: 'Affiliates'                   },
-    { href: '/payments',     icon: '⊕',  label: 'Payments'                     },
-    { href: '/withdrawals',  icon: '↑',  label: 'Withdrawals'                      },
-    { href: '/logs',         icon: '☰',  label: 'Logs',           superOnly: true },
+    { href: '/dashboard',  icon: 'dashboard', label: 'Dashboard' },
+    { href: '/licenses',   icon: 'key',       label: 'Licenses'  },
+    { href: '/sales',      icon: 'trending',  label: 'Sales'     },
+    { href: '/expenses',   icon: 'wallet',    label: 'Expenses'  },
+    { href: '/admins',       icon: 'users',   label: 'Admins',         superOnly: true },
+    { href: '/whitelabel',   icon: 'layers',  label: 'Whitelabel',     superOnly: true },
+    { href: '/affiliates',   icon: 'share',   label: 'Affiliates'                   },
+    { href: '/payments',     icon: 'rupee',   label: 'Payments'                     },
+    { href: '/withdrawals',  icon: 'arrowUp', label: 'Withdrawals'                      },
+    { href: '/logs',         icon: 'list',    label: 'Logs',           superOnly: true },
 ];
 
 export default function AppLayout({ children }) {
     const router   = useRouter();
     const pathname = usePathname();
-    const [user, setUser]   = useState(null);
-    const [ready, setReady] = useState(false);
+    const [user, setUser]     = useState(null);
+    const [ready, setReady]   = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useState(false);
 
     useEffect(() => {
         if (!getToken()) { router.replace('/login'); return; }
@@ -37,6 +39,9 @@ export default function AppLayout({ children }) {
             setReady(true);
         });
     }, []);
+
+    // Close the mobile sidebar whenever the route changes
+    useEffect(() => { setSidebarOpen(false); }, [pathname]);
 
     const logout = () => {
         clearToken(); // also removes zyqora_admin_user
@@ -60,8 +65,25 @@ export default function AppLayout({ children }) {
 
     return (
         <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: '#0a0d14' }}>
+            {/* Mobile topbar */}
+            <div className="mobile-topbar">
+                <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setSidebarOpen(true)}
+                    aria-label="Open menu"
+                    style={{ padding: '6px 9px' }}
+                >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
+                </button>
+                <div className="mobile-topbar-name">Zyqora</div>
+                <div style={{ marginLeft: 'auto', fontSize: 12, color: '#4a5980' }}>{user?.name || user?.username}</div>
+            </div>
+
+            {/* Mobile sidebar backdrop */}
+            {sidebarOpen && <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />}
+
             {/* Sidebar */}
-            <aside className="sidebar">
+            <aside className={`sidebar${sidebarOpen ? ' open' : ''}`}>
                 <div className="sidebar-logo">
                     <div className="sidebar-logo-name">Zyqora</div>
                     <div className="sidebar-logo-sub">License Management</div>
@@ -74,7 +96,7 @@ export default function AppLayout({ children }) {
                             href={n.href}
                             className={`nav-item${pathname.startsWith(n.href) ? ' active' : ''}`}
                         >
-                            <span className="nav-icon" style={{ fontSize: 15 }}>{n.icon}</span>
+                            <span className="nav-icon"><Icon name={n.icon} size={16} /></span>
                             <span>{n.label}</span>
                         </Link>
                     ))}
@@ -95,7 +117,7 @@ export default function AppLayout({ children }) {
             </aside>
 
             {/* Main content */}
-            <main style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <main className="app-main" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
                 {children}
             </main>
         </div>

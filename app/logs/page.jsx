@@ -2,6 +2,10 @@
 import { useEffect, useState, useMemo } from 'react';
 import AppLayout from '@/components/AppLayout';
 import { apiFetch } from '@/lib/apiFetch';
+import { TableSkeleton } from '@/components/Skeleton';
+import { useToast } from '@/components/Toast';
+
+const PAGE_SIZE = 50;
 
 function fmtDate(ts) {
     if (!ts) return '—';
@@ -28,8 +32,10 @@ export default function LogsPage() {
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState('all'); // all | warning | LICENSE_GENERATED | LICENSE_REVOKED | LICENSE_DELETED
     const [search, setSearch] = useState('');
+    const [page, setPage] = useState(1);
     const [clearStep, setClearStep] = useState(0); // 0=idle 1=first confirm 2=second confirm
     const [clearBusy, setClearBusy] = useState(false);
+    const toast = useToast();
 
     useEffect(() => {
         apiFetch('/api/logs').then(r => {
@@ -44,6 +50,9 @@ export default function LogsPage() {
         if (r?.ok) {
             setLogs([]);
             setClearStep(0);
+            toast.success('Activity logs cleared');
+        } else {
+            toast.error(r?.data?.error || 'Failed to clear logs');
         }
         setClearBusy(false);
     };
@@ -63,6 +72,13 @@ export default function LogsPage() {
         }
         return list;
     }, [logs, filter, search]);
+
+    // Reset to the first page whenever the filters change
+    useEffect(() => { setPage(1); }, [search, filter]);
+
+    const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+    const safePage = Math.min(page, totalPages);
+    const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
     const warnCount = logs.filter(l => l.flag === 'warning').length;
     const genCount  = logs.filter(l => l.action === 'LICENSE_GENERATED').length;
@@ -160,7 +176,7 @@ export default function LogsPage() {
                     </div>
 
                     {loading ? (
-                        <div className="empty">Loading logs…</div>
+                        <TableSkeleton rows={8} />
                     ) : filtered.length === 0 ? (
                         <div className="empty">No log entries found.</div>
                     ) : (
@@ -180,13 +196,13 @@ export default function LogsPage() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {filtered.map((log, i) => {
+                                    {paged.map((log, i) => {
                                         const am = ACTION_META[log.action] || { label: log.action, color: '#94a3b8', icon: '•' };
                                         const isWarn = log.flag === 'warning';
                                         const price = Math.max(0, parseFloat(log.meta?.discountedPrice ?? log.meta?.price) || 0);
                                         return (
                                             <tr key={log.id} style={isWarn ? { background: 'rgba(239,68,68,0.07)' } : {}}>
-                                                <td style={{ color: '#3a4560', fontSize: 12 }}>{i + 1}</td>
+                                                <td style={{ color: '#3a4560', fontSize: 12 }}>{(safePage - 1) * PAGE_SIZE + i + 1}</td>
                                                 <td style={{ fontSize: 12, color: '#64748b', whiteSpace: 'nowrap' }}>{fmtDate(log.ts)}</td>
                                                 <td>
                                                     <span style={{
@@ -235,6 +251,18 @@ export default function LogsPage() {
                                     })}
                                 </tbody>
                             </table>
+                        </div>
+                    )}
+
+                    {/* Pagination */}
+                    {!loading && filtered.length > PAGE_SIZE && (
+                        <div className="pager">
+                            <span className="pager-info">
+                                Showing {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, filtered.length)} of {filtered.length}
+                            </span>
+                            <button className="btn btn-ghost btn-sm" disabled={safePage === 1} onClick={() => setPage(p => Math.max(1, p - 1))}>‹ Prev</button>
+                            <span className="pager-page">Page {safePage} / {totalPages}</span>
+                            <button className="btn btn-ghost btn-sm" disabled={safePage === totalPages} onClick={() => setPage(p => Math.min(totalPages, p + 1))}>Next ›</button>
                         </div>
                     )}
                 </div>

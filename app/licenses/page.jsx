@@ -2,6 +2,9 @@
 import { useEffect, useState } from 'react';
 import AppLayout from '@/components/AppLayout';
 import { apiFetch } from '@/lib/apiFetch';
+import Modal from '@/components/Modal';
+import { TableSkeleton } from '@/components/Skeleton';
+import { useToast } from '@/components/Toast';
 
 const PLANS = [
     { value: 'trial1day', label: 'Trial (1 day)'         },
@@ -44,6 +47,8 @@ const WL_MODE_META = {
     cloud:   { label: 'Cloud',        background: 'rgba(37,211,102,.15)',  color: '#25D366' },
     app:     { label: 'Android App',  background: 'rgba(74,158,255,.15)',  color: '#4a9eff' },
 };
+
+const PAGE_SIZE = 25;
 
 function fmtDate(ts) {
     if (!ts) return '—';
@@ -129,6 +134,8 @@ export default function LicensesPage() {
     const [loading,  setLoading]  = useState(true);
     const [search,   setSearch]   = useState('');
     const [typeFilter, setTypeFilter] = useState('all');
+    const [page,     setPage]     = useState(1);
+    const toast = useToast();
     const [showGen,  setShowGen]  = useState(false);
     const [form,     setForm]     = useState(DEFAULT_FORM);
     const [genBusy,  setGenBusy]  = useState(false);
@@ -225,6 +232,13 @@ export default function LicensesPage() {
                l.machineId?.toLowerCase().includes(q);
     });
 
+    // Reset to the first page whenever the filters change
+    useEffect(() => { setPage(1); }, [search, typeFilter]);
+
+    const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+    const safePage = Math.min(page, totalPages);
+    const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
     const formPrice = toAmountNumber(form.price);
     const formDiscounted = form.discountedPrice === ''
         ? formPrice
@@ -249,6 +263,7 @@ export default function LicensesPage() {
         setGenKey(r.data.key);
         setGeneratedLicense(r.data.license || null);
         setGenBusy(false);
+        toast.success(`License generated for ${r.data.license?.clientName || 'client'}`);
         load();
         if (user?.role === 'whitelabel') refreshWhitelabel();
     };
@@ -440,8 +455,8 @@ export default function LicensesPage() {
         setRevBusy(true);
         setRevErr('');
         const r = await apiFetch('/api/licenses/revoke', { method: 'POST', body: { key: showRev, reason: revReason } });
-        if (r?.ok) { setShowRev(null); setRevReason(''); load(); }
-        else setRevErr(r?.data?.error || 'Failed to revoke');
+        if (r?.ok) { setShowRev(null); setRevReason(''); load(); toast.success('License revoked'); }
+        else { setRevErr(r?.data?.error || 'Failed to revoke'); toast.error(r?.data?.error || 'Failed to revoke'); }
         setRevBusy(false);
     };
 
@@ -449,8 +464,8 @@ export default function LicensesPage() {
         setDelBusy(true);
         setDelErr('');
         const r = await apiFetch('/api/licenses/delete', { method: 'POST', body: { key: showDel.key } });
-        if (r?.ok) { setShowDel(null); load(); }
-        else setDelErr(r?.data?.error || 'Failed to delete');
+        if (r?.ok) { setShowDel(null); load(); toast.success('License deleted'); }
+        else { setDelErr(r?.data?.error || 'Failed to delete'); toast.error(r?.data?.error || 'Failed to delete'); }
         setDelBusy(false);
     };
 
@@ -480,6 +495,7 @@ export default function LicensesPage() {
         setConvertedKey(r.data.key);
         setConvertedLicense(r.data.license || null);
         setConvertBusy(false);
+        toast.success('Trial converted — new key issued');
         load();
     };
 
@@ -491,6 +507,7 @@ export default function LicensesPage() {
         if (!r?.ok) { setEditErr(r?.data?.error || 'Failed to update'); setEditBusy(false); return; }
         setShowEdit(null);
         setEditBusy(false);
+        toast.success('License updated');
         load();
     };
 
@@ -738,6 +755,16 @@ export default function LicensesPage() {
                         ))}
                     </div>
 
+                    {loading ? (
+                        <TableSkeleton rows={8} />
+                    ) : filtered.length === 0 ? (
+                        <div className="table-wrap"><table><tbody>
+                            <tr><td colSpan={11} className="empty">
+                                No licenses found{search || typeFilter !== 'all' ? ' for the current filters' : ' yet'}
+                            </td></tr>
+                        </tbody></table></div>
+                    ) : (
+                    <>
                     <div className="table-wrap">
                         <table>
                             <thead>
@@ -756,11 +783,7 @@ export default function LicensesPage() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {loading ? (
-                                    <tr><td colSpan={11} className="empty">Loading…</td></tr>
-                                ) : filtered.length === 0 ? (
-                                    <tr><td colSpan={11} className="empty">No licenses found</td></tr>
-                                ) : filtered.map(l => {
+                                {paged.map(l => {
                                     const days = getDaysLeft(l);
                                     const isExpired = !l.isLifetime && days !== null && days < 0;
                                     return (
@@ -858,18 +881,31 @@ export default function LicensesPage() {
                             </tbody>
                         </table>
                     </div>
+
+                    {/* Pagination */}
+                    {filtered.length > PAGE_SIZE && (
+                        <div className="pager">
+                            <span className="pager-info">
+                                Showing {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, filtered.length)} of {filtered.length}
+                            </span>
+                            <button className="btn btn-ghost btn-sm" disabled={safePage === 1} onClick={() => setPage(p => Math.max(1, p - 1))}>‹ Prev</button>
+                            <span className="pager-page">Page {safePage} / {totalPages}</span>
+                            <button className="btn btn-ghost btn-sm" disabled={safePage === totalPages} onClick={() => setPage(p => Math.min(totalPages, p + 1))}>Next ›</button>
+                        </div>
+                    )}
+                    </>
+                    )}
                 </div>
             </div>
 
             {/* ── Generate Modal ─────────────────────────────────────────── */}
             {showGen && (
-                <div className="modal-overlay" onClick={e => e.target === e.currentTarget && !genKey && setShowGen(false)}>
-                    <div className="modal">
-                        <div className="modal-header">
-                            <span className="modal-title">{genKey ? '✓ Key Generated' : 'Generate License Key'}</span>
-                            <button className="modal-close" onClick={() => setShowGen(false)}>×</button>
-                        </div>
-
+                <Modal
+                    title={genKey ? '✓ Key Generated' : 'Generate License Key'}
+                    onClose={() => setShowGen(false)}
+                    busy={genBusy}
+                    backdropClose={!genKey}
+                >
                         {genKey ? (
                             <div className="modal-body">
                                 <div style={{ background: '#161c2d', border: '1px solid #7c3aed', borderRadius: 10, padding: '16px 18px' }}>
@@ -1080,18 +1116,12 @@ export default function LicensesPage() {
                                 </div>
                             </form>
                         )}
-                    </div>
-                </div>
+                </Modal>
             )}
 
             {/* ── Delete Modal ───────────────────────────────────────────── */}
             {showDel && (
-                <div className="modal-overlay">
-                    <div className="modal" style={{ maxWidth: 440 }}>
-                        <div className="modal-header">
-                            <span className="modal-title">Delete License</span>
-                            <button className="modal-close" onClick={() => setShowDel(null)} disabled={delBusy}>×</button>
-                        </div>
+                <Modal title="Delete License" onClose={() => setShowDel(null)} maxWidth={440} busy={delBusy}>
                         <div className="modal-body">
                             {showDel.price > 0 && (
                                 <div style={{
@@ -1128,18 +1158,12 @@ export default function LicensesPage() {
                                 {delBusy ? 'Deleting…' : (showDel.price > 0 ? 'Delete Anyway' : 'Delete Permanently')}
                             </button>
                         </div>
-                    </div>
-                </div>
+                </Modal>
             )}
 
             {/* ── Revoke Modal ───────────────────────────────────────────── */}
             {showRev && (
-                <div className="modal-overlay">
-                    <div className="modal" style={{ maxWidth: 420 }}>
-                        <div className="modal-header">
-                            <span className="modal-title">Revoke License</span>
-                            <button className="modal-close" onClick={() => setShowRev(null)}>×</button>
-                        </div>
+                <Modal title="Revoke License" onClose={() => setShowRev(null)} maxWidth={420} busy={revBusy}>
                         <div className="modal-body">
                             <div style={{ color: '#94a3b8', fontSize: 13 }}>
                                 This will immediately invalidate the key. The client's app will show as unlicensed on next startup.
@@ -1156,22 +1180,16 @@ export default function LicensesPage() {
                             {revErr && <div className="form-error">{revErr}</div>}
                         </div>
                         <div className="modal-footer">
-                            <button className="btn btn-ghost" onClick={() => setShowRev(null)}>Cancel</button>
+                            <button className="btn btn-ghost" onClick={() => setShowRev(null)} disabled={revBusy}>Cancel</button>
                             <button className="btn btn-danger" onClick={revoke} disabled={revBusy}>
                                 {revBusy ? 'Revoking…' : 'Confirm Revoke'}
                             </button>
                         </div>
-                    </div>
-                </div>
+                </Modal>
             )}
             {/* ── Detail Modal ──────────────────────────────────────────── */}
             {showDetail && (
-                <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowDetail(null)}>
-                    <div className="modal" style={{ maxWidth: 580 }}>
-                        <div className="modal-header">
-                            <span className="modal-title">📋 License Details</span>
-                            <button className="modal-close" onClick={() => setShowDetail(null)}>×</button>
-                        </div>
+                <Modal title="📋 License Details" onClose={() => setShowDetail(null)} maxWidth={580}>
                         <div className="modal-body">
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 24px' }}>
                                 <div>
@@ -1307,18 +1325,12 @@ export default function LicensesPage() {
                             </button>
                             <button className="btn btn-primary" onClick={() => { setShowEdit(showDetail); setEditForm({ clientName: showDetail.clientName || '', clientPhone: showDetail.clientPhone || '', clientEmail: showDetail.clientEmail || '', businessCategory: showDetail.businessCategory || '', website: showDetail.website || '', price: showDetail.price ?? '', notes: showDetail.notes || '', affiliateId: showDetail.affiliateId || '', affiliateName: showDetail.affiliateName || '', features: { ...DEFAULT_FEATURES, ...(showDetail.features || {}) } }); setEditErr(''); setShowDetail(null); }}>✎ Edit</button>
                         </div>
-                    </div>
-                </div>
+                </Modal>
             )}
 
             {/* ── Edit Modal ────────────────────────────────────────────── */}
             {showEdit && (
-                <div className="modal-overlay">
-                    <div className="modal" style={{ maxWidth: 540 }}>
-                        <div className="modal-header">
-                            <span className="modal-title">✎ Edit License</span>
-                            <button className="modal-close" onClick={() => setShowEdit(null)} disabled={editBusy}>×</button>
-                        </div>
+                <Modal title="✎ Edit License" onClose={() => setShowEdit(null)} maxWidth={540} busy={editBusy}>
                         <form onSubmit={updateLicense}>
                             <div className="modal-body">
                                 <div className="form-row">
@@ -1404,21 +1416,19 @@ export default function LicensesPage() {
                                 </button>
                             </div>
                         </form>
-                    </div>
-                </div>
+                </Modal>
             )}
         </AppLayout>
 
         {/* ── Convert Modal ─────────────────────────────────────────── */}
         {showConvert && (
-            <div className="modal-overlay" onClick={e => { if (!convertedKey && e.target === e.currentTarget) setShowConvert(null); }}>
-                <div className="modal" style={{ maxWidth: 520 }}>
-                    <div className="modal-header">
-                        <span className="modal-title">
-                            {convertedKey ? '✓ Converted to Paid Plan' : `Convert Trial → Paid`}
-                        </span>
-                        <button className="modal-close" onClick={() => setShowConvert(null)} disabled={convertBusy}>×</button>
-                    </div>
+            <Modal
+                title={convertedKey ? '✓ Converted to Paid Plan' : 'Convert Trial → Paid'}
+                onClose={() => setShowConvert(null)}
+                maxWidth={520}
+                busy={convertBusy}
+                backdropClose={!convertedKey}
+            >
 
                     {convertedKey ? (
                         <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -1521,8 +1531,7 @@ export default function LicensesPage() {
                             </div>
                         </form>
                     )}
-                </div>
-            </div>
+            </Modal>
         )}
     </>
     );

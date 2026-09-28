@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import AppLayout from '@/components/AppLayout';
 import { apiFetch } from '@/lib/apiFetch';
+import { useToast } from '@/components/Toast';
 
 const DEFAULT_FORM = { username: '', password: '', role: 'admin' };
 
@@ -19,6 +20,7 @@ function getDaysLeft(l) {
 
 export default function AdminsPage() {
     const router   = useRouter();
+    const toast    = useToast();
     const [user,    setUser]    = useState(null);
     const [admins,  setAdmins]  = useState([]);
     const [loading, setLoading] = useState(true);
@@ -69,6 +71,7 @@ export default function AdminsPage() {
         if (!r.ok) { setErr(r.data.error || 'Failed'); setBusy(false); return; }
         setShowCreate(false);
         setForm(DEFAULT_FORM);
+        toast.success(`Admin "${form.username}" created`);
         load();
         setBusy(false);
     };
@@ -76,7 +79,12 @@ export default function AdminsPage() {
     const toggle = async (id) => {
         setTogBusy(id);
         const r = await apiFetch(`/api/admins/${id}/toggle`, { method: 'POST' });
-        if (r?.ok) load();
+        if (r?.ok) {
+            toast.success(r.data.active ? 'Admin activated' : 'Admin deactivated');
+            load();
+        } else {
+            toast.error(r?.data?.error || 'Failed to update');
+        }
         setTogBusy('');
     };
 
@@ -102,8 +110,11 @@ export default function AdminsPage() {
         const r = await apiFetch('/api/licenses/revoke', { method: 'POST', body: { key: revModal.key, reason: revReason } });
         if (r?.ok) {
             setRevModal(null);
+            toast.success('License revoked');
             const r2 = await apiFetch(`/api/admins/${viewAdmin.id}/licenses`);
             if (r2?.ok) setAdminLics(r2.data.licenses || []);
+        } else {
+            toast.error(r?.data?.error || 'Failed to revoke');
         }
         setRevBusy(false);
     };
@@ -115,9 +126,12 @@ export default function AdminsPage() {
         const r = await apiFetch('/api/licenses/delete', { method: 'POST', body: { key: delModal.key } });
         if (r?.ok) {
             setDelModal(null);
+            toast.success('License deleted');
             const r2 = await apiFetch(`/api/admins/${viewAdmin.id}/licenses`);
             if (r2?.ok) setAdminLics(r2.data.licenses || []);
             load(); // refresh admin list to update license count
+        } else {
+            toast.error(r?.data?.error || 'Failed to delete');
         }
         setDelBusy(false);
     };
@@ -132,6 +146,7 @@ export default function AdminsPage() {
         setPwModal(null);
         setNewPw('');
         setPwBusy(false);
+        toast.success(`Password changed for ${pwModal.username}`);
     };
 
     return (

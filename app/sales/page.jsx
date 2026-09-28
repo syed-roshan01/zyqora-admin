@@ -2,6 +2,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import AppLayout from '@/components/AppLayout';
 import { apiFetch } from '@/lib/apiFetch';
+import { TableSkeleton } from '@/components/Skeleton';
 
 const PERIODS = [
     { key: 'today',  label: 'Today'      },
@@ -105,7 +106,7 @@ export default function SalesPage() {
 
                 <div className="page-body">
                     {loading ? (
-                        <div className="empty">Loading…</div>
+                        <TableSkeleton rows={8} />
                     ) : (
                         <>
                             {/* Summary stat cards */}

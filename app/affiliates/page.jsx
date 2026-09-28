@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import AppLayout from '@/components/AppLayout';
 import { apiFetch } from '@/lib/apiFetch';
+import { TableSkeleton } from '@/components/Skeleton';
+import { useToast } from '@/components/Toast';
 
 function fmtDate(ts) {
     if (!ts) return '—';
@@ -13,6 +15,7 @@ const EMPTY_FORM = { username: '', name: '', password: '', commission: '' };
 
 export default function AffiliatesPage() {
     const router = useRouter();
+    const toast = useToast();
     const [user, setUser] = useState(null);
     const [affiliates, setAffiliates] = useState([]);
     const [licenses, setLicenses] = useState([]);
@@ -105,11 +108,17 @@ export default function AffiliatesPage() {
         setForm(EMPTY_FORM);
         setShowForm(false);
         setBusy(false);
+        toast.success(`Affiliate "${form.name}" created`);
         load();
     };
 
     const toggleAffiliate = async (id) => {
-        await apiFetch(`/api/affiliates/${id}/toggle`, { method: 'POST' });
+        const r = await apiFetch(`/api/affiliates/${id}/toggle`, { method: 'POST' });
+        if (r?.ok) {
+            toast.success(r.data.active ? 'Affiliate activated' : 'Affiliate deactivated');
+        } else {
+            toast.error(r?.data?.error || 'Failed to update status');
+        }
         load();
     };
 
@@ -122,6 +131,7 @@ export default function AffiliatesPage() {
         setPwAffiliate(null);
         setNewPw('');
         setPwBusy(false);
+        toast.success('Password updated');
     };
 
     const updateCommission = async (e) => {
@@ -133,6 +143,7 @@ export default function AffiliatesPage() {
         setCommAffiliate(null);
         setNewComm('');
         setCommBusy(false);
+        toast.success(`Commission set to ${newComm}%`);
         load();
     };
 
@@ -140,8 +151,12 @@ export default function AffiliatesPage() {
         setDeleteBusy(true);
         const r = await apiFetch(`/api/affiliates/${deleteState.id}/delete`, { method: 'POST' });
         if (r?.ok) {
-            setDeleteState(null);
+            setDeleteState({ id: null, step: 0 });
+            toast.success('Affiliate deleted');
             load();
+        } else {
+            setDeleteState(d => ({ ...d, step: 0 }));
+            toast.error(r?.data?.error || 'Failed to delete affiliate');
         }
         setDeleteBusy(false);
     };
@@ -156,6 +171,7 @@ export default function AffiliatesPage() {
         setPayAmount('');
         setPayNote('');
         setPayBusy(false);
+        toast.success(`Payment of ₹${Number(payAmount).toLocaleString('en-IN')} recorded`);
         load();
     };
 
@@ -223,7 +239,7 @@ export default function AffiliatesPage() {
                     )}
 
                     {loading ? (
-                        <div className="empty">Loading…</div>
+                        <TableSkeleton rows={5} />
                     ) : affiliates.length === 0 ? (
                         <div className="empty">No affiliates yet.{user?.role === 'super' ? ' Add one above.' : ''}</div>
                     ) : (

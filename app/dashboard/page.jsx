@@ -3,6 +3,9 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import AppLayout from '@/components/AppLayout';
 import { apiFetch } from '@/lib/apiFetch';
+import Icon from '@/components/Icons';
+import { CardsSkeleton, TableSkeleton } from '@/components/Skeleton';
+import { useToast } from '@/components/Toast';
 
 function fmtDate(ts) {
     if (!ts) return '—';
@@ -14,6 +17,17 @@ function getDaysLeft(lic) {
     if (!lic.expiryTs) return null; // missing expiry — treat as unknown, not NaN
     const secs = lic.expiryTs - Math.floor(Date.now() / 1000);
     return Math.floor(secs / 86400);
+}
+
+function StatCard({ icon, tone, label, value, sub, valueStyle }) {
+    return (
+        <div className="stat-card">
+            <div className="stat-icon" data-tone={tone || 'accent'}><Icon name={icon} size={15} /></div>
+            <div className="stat-label">{label}</div>
+            <div className="stat-value" style={valueStyle}>{value}</div>
+            {sub && <div className="stat-sub">{sub}</div>}
+        </div>
+    );
 }
 
 export default function DashboardPage() {
@@ -31,6 +45,7 @@ export default function DashboardPage() {
     const [demoEnabled, setDemoEnabled] = useState(true);
     const [demoBusy, setDemoBusy] = useState(false);
     const [demoMessage, setDemoMessage] = useState('');
+    const toast = useToast();
 
     useEffect(() => {
         const cached = localStorage.getItem('zyqora_admin_user');
@@ -75,7 +90,11 @@ export default function DashboardPage() {
         if (res?.ok) {
             setDemoEnabled(next);
             setDemoMessage(next ? 'Demo is enabled' : 'Demo is disabled');
-        } else setDemoMessage(res?.data?.error || 'Could not update demo status');
+            toast.success(next ? 'Public demo enabled' : 'Public demo disabled');
+        } else {
+            setDemoMessage(res?.data?.error || 'Could not update demo status');
+            toast.error(res?.data?.error || 'Could not update demo status');
+        }
         setDemoBusy(false);
     }
 
@@ -142,7 +161,10 @@ export default function DashboardPage() {
 
                 <div className="page-body">
                     {loading ? (
-                        <div className="empty">Loading stats…</div>
+                        <>
+                            <CardsSkeleton cards={8} />
+                            <TableSkeleton rows={5} />
+                        </>
                     ) : (
                         <>
                             {user?.role === 'super' && (
@@ -160,76 +182,34 @@ export default function DashboardPage() {
                                 </div>
                             )}
                             <div className="stats-grid">
-                                <div className="stat-card">
-                                    <div className="stat-label">Total Licenses</div>
-                                    <div className="stat-value stat-accent">{total}</div>
-                                    <div className="stat-sub">All time issued</div>
-                                </div>
-                                <div className="stat-card">
-                                    <div className="stat-label">Active</div>
-                                    <div className="stat-value stat-green">{active}</div>
-                                    <div className="stat-sub">Not expired or revoked</div>
-                                </div>
-                                <div className="stat-card">
-                                    <div className="stat-label">Revoked</div>
-                                    <div className="stat-value stat-red">{revoked}</div>
-                                    <div className="stat-sub">Manually revoked</div>
-                                </div>
-                                <div className="stat-card">
-                                    <div className="stat-label">Expired</div>
-                                    <div className="stat-value" style={{ color: '#64748b' }}>{expired}</div>
-                                    <div className="stat-sub">Past expiry date</div>
-                                </div>
+                                <StatCard icon="key" label="Total Licenses" value={total} sub="All time issued" valueStyle={{ color: 'var(--accent-light)' }} />
+                                <StatCard icon="check" tone="green" label="Active" value={active} sub="Not expired or revoked" valueStyle={{ color: 'var(--green)' }} />
+                                <StatCard icon="shield" tone="red" label="Revoked" value={revoked} sub="Manually revoked" valueStyle={{ color: 'var(--red)' }} />
+                                <StatCard icon="clock" label="Expired" value={expired} sub="Past expiry date" valueStyle={{ color: 'var(--text-faint)' }} />
                                 {user?.role === 'super' && (
-                                    <div className="stat-card">
-                                        <div className="stat-label">Admins</div>
-                                        <div className="stat-value stat-blue">{admins.length}</div>
-                                        <div className="stat-sub">{admins.filter(a => a.active).length} active</div>
-                                    </div>
+                                    <StatCard icon="users" tone="blue" label="Admins" value={admins.length} sub={`${admins.filter(a => a.active).length} active`} valueStyle={{ color: 'var(--blue)' }} />
                                 )}
-                                <div className="stat-card">
-                                    <div className="stat-label">Issued Today</div>
-                                    <div className="stat-value" style={{ color: '#f59e0b' }}>{issuedToday}</div>
-                                    <div className="stat-sub">Since midnight</div>
-                                </div>
-                                <div className="stat-card">
-                                    <div className="stat-label">Total Revenue</div>
-                                    <div className="stat-value stat-green">₹{totalRevenue.toLocaleString('en-IN')}</div>
-                                    <div className="stat-sub">From license sales</div>
-                                </div>
-                                <div className="stat-card">
-                                    <div className="stat-label">Total Expenses</div>
-                                    <div className="stat-value stat-red">₹{totalExpenses.toLocaleString('en-IN')}</div>
-                                    <div className="stat-sub">All recorded expenses</div>
-                                </div>
-                                <div className="stat-card">
-                                    <div className="stat-label">Money Left</div>
-                                    <div className="stat-value" style={{ color: (user?.role === 'super' ? actualCash : globalStats.moneyLeft) >= 0 ? '#22c55e' : '#ef4444' }}>
-                                        ₹{(user?.role === 'super' ? actualCash : globalStats.moneyLeft).toLocaleString('en-IN')}
-                                    </div>
-                                    <div className="stat-sub">
-                                        {user?.role === 'super'
-                                            ? 'After expenses, withdrawals & affiliate payouts'
-                                            : 'Business net after expenses & all withdrawals'}
-                                    </div>
-                                </div>
+                                <StatCard icon="zap" tone="amber" label="Issued Today" value={issuedToday} sub="Since midnight" valueStyle={{ color: 'var(--amber)' }} />
+                                <StatCard icon="trending" tone="green" label="Total Revenue" value={`₹${totalRevenue.toLocaleString('en-IN')}`} sub="From license sales" valueStyle={{ color: 'var(--green)' }} />
+                                <StatCard icon="wallet" tone="red" label="Total Expenses" value={`₹${totalExpenses.toLocaleString('en-IN')}`} sub="All recorded expenses" valueStyle={{ color: 'var(--red)' }} />
+                                <StatCard
+                                    icon="rupee"
+                                    label="Money Left"
+                                    value={`₹${(user?.role === 'super' ? actualCash : globalStats.moneyLeft).toLocaleString('en-IN')}`}
+                                    sub={user?.role === 'super' ? 'After expenses, withdrawals & affiliate payouts' : 'Business net after expenses & all withdrawals'}
+                                    valueStyle={{ color: (user?.role === 'super' ? actualCash : globalStats.moneyLeft) >= 0 ? 'var(--green)' : 'var(--red)' }}
+                                />
                                 {user?.role === 'super' && (
-                                    <div className="stat-card">
-                                        <div className="stat-label">Affiliate Commission</div>
-                                        <div className="stat-value" style={{ color: '#f59e0b' }}>
-                                            ₹{affiliateStillOwed.toLocaleString('en-IN')}
-                                        </div>
-                                        <div className="stat-sub">Still owed to affiliates</div>
-                                    </div>
+                                    <StatCard icon="share" tone="amber" label="Affiliate Commission" value={`₹${affiliateStillOwed.toLocaleString('en-IN')}`} sub="Still owed to affiliates" valueStyle={{ color: 'var(--amber)' }} />
                                 )}
                                 {user?.role === 'super' && (
-                                    <div className="stat-card">
-                                        <div className="stat-label">Net After Affiliates</div>
-                                        <div className="stat-value" style={{ color: netAfterAll >= 0 ? '#22c55e' : '#ef4444' }}>
-                                            ₹{netAfterAll.toLocaleString('en-IN')}
-                                        </div>
-                                        <div className="stat-sub">Cash minus unpaid commissions</div>
-                                    </div>
+                                    <StatCard
+                                        icon="trending"
+                                        label="Net After Affiliates"
+                                        value={`₹${netAfterAll.toLocaleString('en-IN')}`}
+                                        sub="Cash minus unpaid commissions"
+                                        valueStyle={{ color: netAfterAll >= 0 ? 'var(--green)' : 'var(--red)' }}
+                                    />
                                 )}
                             </div>
 

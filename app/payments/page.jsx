@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import AppLayout from '@/components/AppLayout';
 import { apiFetch } from '@/lib/apiFetch';
+import { TableSkeleton } from '@/components/Skeleton';
+import { useToast } from '@/components/Toast';
 
 function fmtDateTime(ts) {
     if (!ts) return '—';
@@ -26,6 +28,7 @@ function fmtMoney(v) {
 
 export default function PaymentsPage() {
     const router = useRouter();
+    const toast = useToast();
     const [user, setUser] = useState(null);
     const [payments, setPayments] = useState([]);
     const [affiliates, setAffiliates] = useState([]);
@@ -107,6 +110,7 @@ export default function PaymentsPage() {
         if (!r?.ok) { setEditErr(r?.data?.error || 'Failed'); setEditBusy(false); return; }
         setEditBusy(false);
         closeEdit();
+        toast.success('Payment updated');
         load();
     };
 
@@ -162,7 +166,7 @@ export default function PaymentsPage() {
                     </div>
 
                     {loading ? (
-                        <div className="empty">Loading…</div>
+                        <TableSkeleton rows={6} />
                     ) : filtered.length === 0 ? (
                         <div className="empty">No payment records found.</div>
                     ) : (

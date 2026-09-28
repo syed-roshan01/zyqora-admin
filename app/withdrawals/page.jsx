@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import AppLayout from '@/components/AppLayout';
 import { apiFetch } from '@/lib/apiFetch';
+import { TableSkeleton } from '@/components/Skeleton';
+import { useToast } from '@/components/Toast';
 
 function fmtMoney(n) {
     return '₹' + Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
@@ -27,6 +29,7 @@ const EMPTY_FORM = { adminId: '', amount: '', note: '', date: toDateInput() };
 
 export default function WithdrawalsPage() {
     const router = useRouter();
+    const toast = useToast();
 
     const [admins,      setAdmins]      = useState([]);
     const [withdrawals, setWithdrawals] = useState([]);
@@ -158,6 +161,7 @@ export default function WithdrawalsPage() {
         if (!r?.ok) { setErr(r?.data?.error || 'Failed'); setBusy(false); return; }
         setBusy(false);
         closeAdd();
+        toast.success(`Withdrawal of ₹${Number(form.amount).toLocaleString('en-IN')} recorded`);
         load();
     };
 
@@ -184,6 +188,7 @@ export default function WithdrawalsPage() {
         if (!r?.ok) { setEditErr(r?.data?.error || 'Failed'); setEditBusy(false); return; }
         setEditBusy(false);
         closeEdit();
+        toast.success('Withdrawal updated');
         load();
     };
 
@@ -206,6 +211,7 @@ export default function WithdrawalsPage() {
         if (!r?.ok) { setShareErr(r?.data?.error || 'Failed'); setShareBusy(false); return; }
         setShareBusy(false);
         closeShare();
+        toast.success(`Share updated to ${shareVal}%`);
         load();
     };
 
@@ -345,7 +351,7 @@ export default function WithdrawalsPage() {
                     </div>
 
                     {loading ? (
-                        <div className="empty">Loading…</div>
+                        <TableSkeleton rows={6} />
                     ) : filtered.length === 0 ? (
                         <div className="empty">No withdrawals recorded yet.</div>
                     ) : (

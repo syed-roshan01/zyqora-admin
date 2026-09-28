@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import AppLayout from '@/components/AppLayout';
 import { apiFetch } from '@/lib/apiFetch';
+import { TableSkeleton } from '@/components/Skeleton';
+import { useToast } from '@/components/Toast';
 
 function fmtMoney(n) {
     return '₹' + Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
@@ -37,6 +39,7 @@ const EMPTY_FORM = {
 
 export default function ExpensesPage() {
     const router = useRouter();
+    const toast = useToast();
     const [user, setUser] = useState(null);
     const [users, setUsers] = useState([]);
     const [expenses, setExpenses] = useState([]);
@@ -94,6 +97,7 @@ export default function ExpensesPage() {
         }
         setEditBusy(false);
         closeEdit();
+        toast.success('Expense updated');
         load();
     };
 
@@ -173,6 +177,7 @@ export default function ExpensesPage() {
             return;
         }
 
+        toast.success('Expense saved');
         // Fresh form with today's date (EMPTY_FORM's date is frozen at module
         // load — stale if the page stayed open past midnight).
         setForm({ ...EMPTY_FORM, spentDate: toDateInput() });
@@ -324,7 +329,7 @@ export default function ExpensesPage() {
                     </div>
 
                     {loading ? (
-                        <div className="empty">Loading expenses…</div>
+                        <TableSkeleton rows={6} />
                     ) : filtered.length === 0 ? (
                         <div className="empty">No expenses recorded yet.</div>
                     ) : (
