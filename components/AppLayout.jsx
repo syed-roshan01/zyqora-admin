@@ -27,14 +27,20 @@ export default function AppLayout({ children }) {
 
     useEffect(() => {
         if (!getToken()) { router.replace('/login'); return; }
+        let cachedUser = null;
         const cached = localStorage.getItem('zyqora_admin_user');
-        if (cached) try { setUser(JSON.parse(cached)); } catch {}
+        if (cached) try { cachedUser = JSON.parse(cached); setUser(cachedUser); } catch {}
 
         apiFetch('/api/auth/me').then(r => {
             if (!r) return; // auto-redirected on 401
             if (r.ok) {
-                setUser(r.data);
-                localStorage.setItem('zyqora_admin_user', JSON.stringify(r.data));
+                // Cache the live record as the session user — but NEVER let
+                // it drop the role: whitelabel records don't store one, and
+                // every page gates on user.role (a refresh with a role-less
+                // cache makes resellers see the unrestricted admin UI).
+                const merged = { ...r.data, role: r.data.role || cachedUser?.role };
+                setUser(merged);
+                localStorage.setItem('zyqora_admin_user', JSON.stringify(merged));
             }
             setReady(true);
         });

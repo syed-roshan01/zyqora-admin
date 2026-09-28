@@ -8,7 +8,10 @@ export async function GET(req) {
     const admin = await getAdmin(session.sub);
     if (admin) {
         const { passwordHash, ...safe } = admin;
-        return NextResponse.json(safe);
+        // role comes from the verified JWT — whitelabel/affiliate records
+        // don't store one, and clients cache this response as their session
+        // user, so it must always be present.
+        return NextResponse.json({ ...safe, role: session.role });
     }
     // Whitelabel clients use the same panel — return their live record plus
     // current quota usage and partnership countdown so the UI can reflect
@@ -22,6 +25,7 @@ export async function GET(req) {
         const endTs = whitelabel.partnershipEndTs || null;
         return NextResponse.json({
             ...safe,
+            role: session.role,
             usage: { used, limit, remaining: Math.max(0, limit - used) },
             partnership: {
                 startTs: whitelabel.partnershipStartTs || null,
