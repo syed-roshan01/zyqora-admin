@@ -18,6 +18,21 @@ const MODE_OPTIONS = [
     { value: 'app',     label: 'Android App',  sub: 'Bound to Android ID'      },
 ];
 
+// Key durations the super admin can grant a reseller. Anything not checked
+// here can never be issued by that reseller.
+const PLAN_OPTIONS = [
+    { value: 'monthly', label: '1 Month',     sub: '30 days'  },
+    { value: '3months', label: '3 Months',    sub: '90 days'  },
+    { value: '6months', label: '6 Months',    sub: '180 days' },
+    { value: 'yearly',  label: '1 Year',      sub: '365 days' },
+    { value: 'custom',  label: 'Custom Days', sub: 'Set per key' },
+];
+const ALL_PLANS = PLAN_OPTIONS.map(p => p.value);
+
+const PLAN_SHORT = {
+    monthly: '1M', '3months': '3M', '6months': '6M', yearly: '1Y', custom: 'Custom',
+};
+
 const MODE_STYLE = {
     desktop: { background: 'rgba(139,146,176,.15)', color: '#8b93b0' },
     cloud:   { background: 'rgba(37,211,102,.15)',  color: '#25D366' },
@@ -54,12 +69,42 @@ function ModeCheckboxes({ value, onChange }) {
     );
 }
 
+function PlanCheckboxes({ value, onChange }) {
+    return (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
+            {PLAN_OPTIONS.map(({ value: p, label, sub }) => {
+                const on = value.includes(p);
+                return (
+                    <label key={p} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, cursor: 'pointer', padding: '10px 6px', borderRadius: 8, border: '1px solid', borderColor: on ? '#7c3aed' : '#252d42', background: on ? 'rgba(124,58,237,.1)' : 'transparent', transition: 'all .15s', userSelect: 'none', textAlign: 'center' }}>
+                        <input type="checkbox" checked={on}
+                            onChange={() => onChange(p)}
+                            style={{ accentColor: '#7c3aed', width: 14, height: 14 }} />
+                        <span style={{ fontSize: 12, fontWeight: 600, color: on ? '#e2e8f0' : '#4a5980' }}>{label}</span>
+                        <span style={{ fontSize: 10, color: '#3a4560' }}>{sub}</span>
+                    </label>
+                );
+            })}
+        </div>
+    );
+}
+
+function PlanBadge({ plan }) {
+    const opt = PLAN_OPTIONS.find(p => p.value === plan);
+    return (
+        <span className="badge" style={{ background: 'rgba(124,58,237,.12)', color: '#a78bfa' }}>
+            {opt ? PLAN_SHORT[plan] : plan}
+        </span>
+    );
+}
+
 const EMPTY_FORM = {
     name: '', username: '', password: '',
     phone: '', email: '',
     businessName: '', businessCategory: '', website: '',
     notes: '',
     allowedModes: ['desktop'],
+    allowedPlans: [...ALL_PLANS],
+    maxDevices: '3',
     licenseLimit: '50',
 };
 
@@ -131,6 +176,15 @@ export default function WhitelabelPage() {
         }));
     };
 
+    const toggleFormPlan = (p) => {
+        setForm(f => ({
+            ...f,
+            allowedPlans: f.allowedPlans.includes(p)
+                ? f.allowedPlans.filter(x => x !== p)
+                : [...f.allowedPlans, p],
+        }));
+    };
+
     const create = async (e) => {
         e.preventDefault();
         setBusy(true);
@@ -140,6 +194,7 @@ export default function WhitelabelPage() {
             body: {
                 ...form,
                 licenseLimit: parseInt(form.licenseLimit) || 0,
+                maxDevices: parseInt(form.maxDevices) || 0,
             },
         });
         if (!r?.ok) { setErr(r?.data?.error || 'Failed to create'); setBusy(false); return; }
@@ -160,6 +215,9 @@ export default function WhitelabelPage() {
             website: c.website || '',
             notes: c.notes || '',
             allowedModes: [...(c.allowedModes || [])],
+            // Records created before durations existed default to all five
+            allowedPlans: (Array.isArray(c.allowedPlans) && c.allowedPlans.length ? c.allowedPlans : ALL_PLANS).filter(p => ALL_PLANS.includes(p)),
+            maxDevices: String(c.maxDevices ?? 255),
             licenseLimit: String(c.licenseLimit ?? ''),
         });
         setEditErr('');
@@ -172,6 +230,15 @@ export default function WhitelabelPage() {
             allowedModes: f.allowedModes.includes(m)
                 ? f.allowedModes.filter(x => x !== m)
                 : [...f.allowedModes, m],
+        }));
+    };
+
+    const toggleEditPlan = (p) => {
+        setEditForm(f => ({
+            ...f,
+            allowedPlans: f.allowedPlans.includes(p)
+                ? f.allowedPlans.filter(x => x !== p)
+                : [...f.allowedPlans, p],
         }));
     };
 
@@ -191,6 +258,8 @@ export default function WhitelabelPage() {
                 website: editForm.website,
                 notes: editForm.notes,
                 allowedModes: editForm.allowedModes,
+                allowedPlans: editForm.allowedPlans,
+                maxDevices: parseInt(editForm.maxDevices) || 255,
                 licenseLimit: parseInt(editForm.licenseLimit) || 0,
             },
         });
@@ -288,6 +357,8 @@ export default function WhitelabelPage() {
                                         <th>Contact</th>
                                         <th>Business</th>
                                         <th>Allowed Types</th>
+                                        <th>Durations</th>
+                                        <th>Max Devices</th>
                                         <th>Limit</th>
                                         <th>Used</th>
                                         <th>Remaining</th>
@@ -299,6 +370,7 @@ export default function WhitelabelPage() {
                                 <tbody>
                                     {clients.map(c => {
                                         const remaining = c.remainingLicenses ?? 0;
+                                        const plans = (Array.isArray(c.allowedPlans) && c.allowedPlans.length ? c.allowedPlans : ALL_PLANS).filter(p => ALL_PLANS.includes(p));
                                         return (
                                             <tr key={c.id}>
                                                 <td>
@@ -321,6 +393,12 @@ export default function WhitelabelPage() {
                                                         {(c.allowedModes || []).map(m => <ModeBadge key={m} mode={m} />)}
                                                     </div>
                                                 </td>
+                                                <td>
+                                                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                                        {plans.map(p => <PlanBadge key={p} plan={p} />)}
+                                                    </div>
+                                                </td>
+                                                <td style={{ fontWeight: 700, color: '#e2e8f0' }}>{c.maxDevices ?? 255}</td>
                                                 <td style={{ fontWeight: 700, color: '#e2e8f0' }}>{c.licenseLimit}</td>
                                                 <td>{c.usedLicenses}</td>
                                                 <td>
@@ -442,12 +520,26 @@ export default function WhitelabelPage() {
                                     </div>
 
                                     <div className="form-group">
-                                        <label className="form-label">License Limit *</label>
-                                        <input className="form-input" type="number" min={1} max={999999} required value={form.licenseLimit}
-                                            onChange={e => setForm(f => ({ ...f, licenseLimit: e.target.value }))} placeholder="e.g. 50" />
+                                        <label className="form-label" style={{ marginBottom: 8 }}>Allowed Key Durations *</label>
+                                        <PlanCheckboxes value={form.allowedPlans} onChange={toggleFormPlan} />
                                         <span style={{ fontSize: 11, color: '#3a4560' }}>
-                                            Maximum licenses the client can generate in total. Trial→paid conversions don't consume extra slots; deleted licenses free their slot back.
+                                            Only checked durations can be issued by this client. Trials and lifetime keys are never available to resellers.
                                         </span>
+                                    </div>
+
+                                    <div className="form-row">
+                                        <div className="form-group">
+                                            <label className="form-label">Max Devices per Key *</label>
+                                            <input className="form-input" type="number" min={1} max={255} required value={form.maxDevices}
+                                                onChange={e => setForm(f => ({ ...f, maxDevices: e.target.value }))} placeholder="e.g. 3" />
+                                            <span style={{ fontSize: 11, color: '#3a4560' }}>The client cannot issue a key valid on more devices than this.</span>
+                                        </div>
+                                        <div className="form-group">
+                                            <label className="form-label">License Limit *</label>
+                                            <input className="form-input" type="number" min={1} max={999999} required value={form.licenseLimit}
+                                                onChange={e => setForm(f => ({ ...f, licenseLimit: e.target.value }))} placeholder="e.g. 50" />
+                                            <span style={{ fontSize: 11, color: '#3a4560' }}>Total keys the client can generate. Conversions don't consume extra slots; deletions free their slot back.</span>
+                                        </div>
                                     </div>
 
                                     <div className="form-group">
@@ -522,13 +614,25 @@ export default function WhitelabelPage() {
                                 </div>
 
                                 <div className="form-group">
-                                    <label className="form-label">License Limit *</label>
-                                    <input className="form-input" type="number" min={1} max={999999} required value={editForm.licenseLimit}
-                                        onChange={e => setEditForm(f => ({ ...f, licenseLimit: e.target.value }))} />
-                                    <span style={{ fontSize: 11, color: '#3a4560' }}>
-                                        Currently used: {editTarget.usedLicenses ?? 0} licenses. Raising or lowering the limit and changing allowed types applies to the client's panel immediately — no re-login needed.
-                                    </span>
+                                    <label className="form-label" style={{ marginBottom: 8 }}>Allowed Key Durations *</label>
+                                    <PlanCheckboxes value={editForm.allowedPlans} onChange={toggleEditPlan} />
                                 </div>
+
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label className="form-label">Max Devices per Key *</label>
+                                        <input className="form-input" type="number" min={1} max={255} required value={editForm.maxDevices}
+                                            onChange={e => setEditForm(f => ({ ...f, maxDevices: e.target.value }))} />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">License Limit *</label>
+                                        <input className="form-input" type="number" min={1} max={999999} required value={editForm.licenseLimit}
+                                            onChange={e => setEditForm(f => ({ ...f, licenseLimit: e.target.value }))} />
+                                    </div>
+                                </div>
+                                <span style={{ fontSize: 11, color: '#3a4560', display: 'block', marginTop: -6 }}>
+                                    Currently used: {editTarget.usedLicenses ?? 0} licenses. Changing durations, device caps, the limit and allowed types applies to the client's panel immediately — no re-login needed.
+                                </span>
 
                                 <div className="form-group">
                                     <label className="form-label">Notes</label>

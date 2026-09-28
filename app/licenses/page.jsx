@@ -48,6 +48,11 @@ const WL_MODE_META = {
     app:     { label: 'Android App',  background: 'rgba(74,158,255,.15)',  color: '#4a9eff' },
 };
 
+// Key durations a whitelabel reseller may be granted (mirrors
+// WL_PLANS in lib/license.js — kept local because that module is
+// server-only).
+const WL_ALL_PLANS = ['monthly', '3months', '6months', 'yearly', 'custom'];
+
 const PAGE_SIZE = 25;
 
 function fmtDate(ts) {
@@ -209,18 +214,42 @@ export default function LicensesPage() {
         return () => { stopped = true; clearInterval(t); };
     }, [user?.role]);
 
-    // Keep the generate form's license type inside the live allow-list
+    // Keep the generate form's license type and plan inside the live
+    // allow-lists, and the device limit under the live per-key cap
     useEffect(() => {
         if (user?.role !== 'whitelabel' || !wlInfo) return;
         const allowed = Array.isArray(wlInfo.allowedModes) ? wlInfo.allowedModes : [];
         if (allowed.length && !allowed.includes(form.licenseMode)) {
             setForm(f => ({ ...f, licenseMode: allowed[0], machineId: allowed[0] === 'cloud' ? '' : f.machineId }));
         }
-    }, [user?.role, wlInfo, form.licenseMode]);
+        const allowedPlans = Array.isArray(wlInfo.allowedPlans) && wlInfo.allowedPlans.length
+            ? wlInfo.allowedPlans.filter(p => PLANS.some(x => x.value === p))
+            : PLANS.filter(p => WL_ALL_PLANS.includes(p.value)).map(p => p.value);
+        if (allowedPlans.length && !allowedPlans.includes(form.plan)) {
+            setForm(f => ({ ...f, plan: allowedPlans[0], customDays: allowedPlans[0] === 'custom' ? f.customDays : '' }));
+        }
+        const maxDevices = Number(wlInfo.maxDevices) > 0 ? Math.floor(Number(wlInfo.maxDevices)) : 255;
+        if (Number(form.deviceLimit) > maxDevices) {
+            setForm(f => ({ ...f, deviceLimit: String(maxDevices) }));
+        }
+    }, [user?.role, wlInfo, form.licenseMode, form.plan, form.deviceLimit]);
 
     const wlAllowedModes = user?.role === 'whitelabel'
         ? (wlInfo?.allowedModes || [])
         : null;
+
+    // Live duration allow-list and device cap for the reseller's forms
+    const wlAllowedPlans = user?.role === 'whitelabel'
+        ? (Array.isArray(wlInfo?.allowedPlans) && wlInfo.allowedPlans.length
+            ? wlInfo.allowedPlans
+            : WL_ALL_PLANS)
+        : null;
+    const wlMaxDevices = user?.role === 'whitelabel'
+        ? (Number(wlInfo?.maxDevices) > 0 ? Math.floor(Number(wlInfo.maxDevices)) : 255)
+        : 255;
+    const visiblePlans = user?.role === 'whitelabel'
+        ? PLANS.filter(p => wlAllowedPlans.includes(p.value))
+        : PLANS;
 
     const filtered = licenses.filter(l => {
         if (l.revoked && l.revokedReason?.startsWith('Converted to')) return false;
@@ -713,6 +742,20 @@ export default function LicensesPage() {
                                     ))}
                                 </div>
                             </div>
+                            <div>
+                                <div className="stat-label" style={{ marginBottom: 6 }}>ALLOWED DURATIONS</div>
+                                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                    {(wlAllowedPlans || []).map(p => (
+                                        <span key={p} className="badge" style={{ background: 'rgba(124,58,237,.12)', color: '#a78bfa' }}>
+                                            {(PLANS.find(x => x.value === p) || {}).label || p}
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                            <div>
+                                <div className="stat-label" style={{ marginBottom: 4 }}>MAX DEVICES / KEY</div>
+                                <div style={{ fontSize: 24, fontWeight: 800, color: '#a78bfa' }}>{wlMaxDevices}</div>
+                            </div>
                             {!wlInfo.active && (
                                 <div style={{ color: '#ef4444', fontWeight: 700, fontSize: 13 }}>Account disabled — contact the administrator</div>
                             )}
@@ -1022,13 +1065,19 @@ export default function LicensesPage() {
                                             <label className="form-label">Plan *</label>
                                             <select className="form-select" value={form.plan}
                                                 onChange={e => setForm(f => ({ ...f, plan: e.target.value }))}>
-                                                {PLANS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                                                {visiblePlans.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
                                             </select>
+                                            {user?.role === 'whitelabel' && (
+                                                <span style={{ fontSize: 11, color: '#3a4560' }}>Available durations are set by the administrator.</span>
+                                            )}
                                         </div>
                                         <div className="form-group">
                                             <label className="form-label">Device Limit *</label>
-                                            <input className="form-input" type="number" min={1} max={255} required value={form.deviceLimit}
+                                            <input className="form-input" type="number" min={1} max={user?.role === 'whitelabel' ? wlMaxDevices : 255} required value={form.deviceLimit}
                                                 onChange={e => setForm(f => ({ ...f, deviceLimit: e.target.value }))} />
+                                            {user?.role === 'whitelabel' && (
+                                                <span style={{ fontSize: 11, color: '#3a4560' }}>Up to {wlMaxDevices} device{wlMaxDevices !== 1 ? 's' : ''} per key (set by the administrator).</span>
+                                            )}
                                         </div>
                                     </div>
                                     {form.plan === 'custom' && (
@@ -1103,7 +1152,7 @@ export default function LicensesPage() {
                                             <b style={{ color: wlInfo.usage.remaining > 0 ? '#22c55e' : '#ef4444' }}>
                                                 {wlInfo.usage.used} of {wlInfo.usage.limit} used
                                             </b>{' '}
-                                            — {wlInfo.usage.remaining} remaining. Allowed types and limits are managed by the administrator and update automatically.
+                                            — {wlInfo.usage.remaining} remaining. Allowed types, durations, device caps and limits are managed by the administrator and update automatically.
                                         </div>
                                     )}
                                     {genErr && <div className="form-error">{genErr}</div>}
@@ -1482,14 +1531,14 @@ export default function LicensesPage() {
                                         <label className="form-label">New Plan *</label>
                                         <select className="form-select" value={convertForm.plan}
                                             onChange={e => setConvertForm(f => ({ ...f, plan: e.target.value }))}>
-                                            {PLANS.filter(p => p.value !== 'trial' && p.value !== 'trial1day').map(p => (
+                                            {visiblePlans.filter(p => p.value !== 'trial' && p.value !== 'trial1day').map(p => (
                                                 <option key={p.value} value={p.value}>{p.label}</option>
                                             ))}
                                         </select>
                                     </div>
                                     <div className="form-group">
                                         <label className="form-label">Device Limit</label>
-                                        <input className="form-input" type="number" min={1} max={255} value={convertForm.deviceLimit}
+                                        <input className="form-input" type="number" min={1} max={user?.role === 'whitelabel' ? wlMaxDevices : 255} value={convertForm.deviceLimit}
                                             onChange={e => setConvertForm(f => ({ ...f, deviceLimit: e.target.value }))} />
                                     </div>
                                 </div>

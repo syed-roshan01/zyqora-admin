@@ -1,13 +1,15 @@
 import { NextResponse } from 'next/server';
 import { requireSuper } from '@/lib/auth';
 import { getWhitelabel, saveWhitelabel } from '@/lib/kv';
-import { LICENSE_MODES } from '@/lib/license';
+import { LICENSE_MODES, WL_PLANS } from '@/lib/license';
 
 const MAX_LIMIT = 999999;
+const MAX_DEVICES = 255;
 
-// Super admin updates a whitelabel client's profile, allowed license types
-// and/or license limit. Changes are saved to KV immediately and take effect
-// for the client in real time (their panel enforces the live record).
+// Super admin updates a whitelabel client's profile, allowed license types,
+// allowed key durations, device cap and/or license limit. Changes are saved
+// to KV immediately and take effect for the client in real time (their panel
+// enforces the live record).
 export async function POST(req, { params }) {
     const { error, status, session } = await requireSuper(req);
     if (error) return NextResponse.json({ error }, { status });
@@ -26,11 +28,31 @@ export async function POST(req, { params }) {
             return NextResponse.json({ error: 'Select at least one license type' }, { status: 400 });
     }
 
+    let allowedPlans = whitelabel.allowedPlans;
+    if (body.allowedPlans !== undefined) {
+        if (!Array.isArray(body.allowedPlans))
+            return NextResponse.json({ error: 'allowedPlans must be an array' }, { status: 400 });
+        allowedPlans = [...new Set(body.allowedPlans.filter(p => WL_PLANS.includes(p)))];
+        if (!allowedPlans.length)
+            return NextResponse.json({ error: 'Select at least one key duration' }, { status: 400 });
+    }
+
     let licenseLimit = whitelabel.licenseLimit;
     if (body.licenseLimit !== undefined) {
         licenseLimit = Math.floor(Number(body.licenseLimit));
         if (!Number.isFinite(licenseLimit) || licenseLimit < 1 || licenseLimit > MAX_LIMIT)
             return NextResponse.json({ error: `License limit must be between 1 and ${MAX_LIMIT}` }, { status: 400 });
+    }
+
+    let maxDevices = whitelabel.maxDevices;
+    if (body.maxDevices !== undefined) {
+        if (body.maxDevices === null || body.maxDevices === '')
+            maxDevices = MAX_DEVICES;
+        else {
+            maxDevices = Math.floor(Number(body.maxDevices));
+            if (!Number.isFinite(maxDevices) || maxDevices < 1 || maxDevices > MAX_DEVICES)
+                return NextResponse.json({ error: `Max devices must be between 1 and ${MAX_DEVICES}` }, { status: 400 });
+        }
     }
 
     const updated = {
@@ -43,6 +65,8 @@ export async function POST(req, { params }) {
         ...(body.website          !== undefined ? { website:          body.website.trim()          } : {}),
         ...(body.notes            !== undefined ? { notes:            body.notes.trim()            } : {}),
         allowedModes,
+        allowedPlans,
+        maxDevices,
         licenseLimit,
         updatedAt: Math.floor(Date.now() / 1000),
         updatedBy: session.sub,

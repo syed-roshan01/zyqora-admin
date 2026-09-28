@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth';
-import { saveLicense, getAffiliate, getWhitelabel, countIssuedLicenses } from '@/lib/kv';
+import { saveLicense, getAffiliate, getLicense, getWhitelabel, countIssuedLicenses } from '@/lib/kv';
 import { saveLog } from '@/lib/logs';
-import { generateKey, planToExpiry, LICENSE_MODES } from '@/lib/license';
+import { generateKey, planToExpiry, LICENSE_MODES, resolveWlPlans, resolveWlMaxDevices } from '@/lib/license';
 
 export async function POST(req) {
     const { error, status, session } = await requireAuth(req);
@@ -20,9 +20,10 @@ export async function POST(req) {
     if (!LICENSE_MODES.includes(licenseMode) || (licenseMode !== 'cloud' && !machineId?.trim()) || !plan || !clientName?.trim())
         return NextResponse.json({ error: 'clientName, license mode and plan are required' }, { status: 400 });
 
-    // Whitelabel resellers: enforce the live allow-list of license types and
-    // the issue quota against their current record, so super-admin changes
-    // apply immediately. No affiliate attribution or reviewer keys either.
+    // Whitelabel resellers: enforce the live allow-list of license types,
+    // the allowed key durations, the per-key device cap and the issue quota
+    // against their current record, so super-admin changes apply immediately.
+    // No affiliate attribution or reviewer keys either.
     let whitelabel = null;
     if (session.role === 'whitelabel') {
         whitelabel = await getWhitelabel(session.sub);
@@ -31,6 +32,9 @@ export async function POST(req) {
         const allowed = Array.isArray(whitelabel.allowedModes) ? whitelabel.allowedModes : [];
         if (!allowed.includes(licenseMode))
             return NextResponse.json({ error: `License type "${licenseMode}" is not allowed for this account` }, { status: 403 });
+        const allowedPlans = resolveWlPlans(whitelabel);
+        if (!allowedPlans.includes(plan))
+            return NextResponse.json({ error: `Key duration "${plan}" is not allowed for this account` }, { status: 403 });
         if (affiliateId)
             return NextResponse.json({ error: 'Affiliate attribution is not available for whitelabel accounts' }, { status: 403 });
         const used = await countIssuedLicenses(session.sub);
@@ -39,9 +43,25 @@ export async function POST(req) {
     }
 
     const dl       = Math.max(1, Math.min(255, parseInt(deviceLimit) || 1));
-    const expiryTs = planToExpiry(plan, customDays);
+    if (whitelabel) {
+        const maxDevices = resolveWlMaxDevices(whitelabel);
+        if (dl > maxDevices)
+            return NextResponse.json({ error: `Device limit ${dl} exceeds your maximum of ${maxDevices} per key` }, { status: 403 });
+    }
     const isLifetime = plan === 'lifetime';
-    const key = generateKey({ machineId: machineId?.trim().toUpperCase() || 'CLOUD', expiryTs, deviceLimit: dl, licenseMode });
+    let expiryTs = planToExpiry(plan, customDays);
+    let key = generateKey({ machineId: machineId?.trim().toUpperCase() || 'CLOUD', expiryTs, deviceLimit: dl, licenseMode });
+    // Same-second collision guard: two identical-spec cloud keys share the
+    // same HMAC inputs and would silently overwrite each other. Nudge expiry
+    // by 1 second (invisible to clients) until the key is unused. Lifetime
+    // keys keep their fixed 0xFFFFFFFF expiry — identical lifetime re-issues
+    // stay idempotent instead.
+    if (!isLifetime) {
+        for (let tries = 0; tries < 5 && await getLicense(key); tries++) {
+            expiryTs += 1;
+            key = generateKey({ machineId: machineId?.trim().toUpperCase() || 'CLOUD', expiryTs, deviceLimit: dl, licenseMode });
+        }
+    }
     const priceNum = Math.max(0, parseFloat(price) || 0);
     const discountedNumRaw = discountedPrice === '' || discountedPrice === undefined || discountedPrice === null
         ? priceNum

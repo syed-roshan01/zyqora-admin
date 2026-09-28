@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth';
 import { getLicense, saveLicense, getAffiliate, getWhitelabel, countIssuedLicenses } from '@/lib/kv';
 import { saveLog } from '@/lib/logs';
-import { generateKey, planToExpiry } from '@/lib/license';
+import { generateKey, planToExpiry, resolveWlPlans, resolveWlMaxDevices } from '@/lib/license';
 
 export async function POST(req) {
     const { error, status, session } = await requireAuth(req);
@@ -22,9 +22,10 @@ export async function POST(req) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
     // Whitelabel resellers: the converted license keeps its original type, so
-    // that type must still be allowed. Quota-wise a conversion is net-neutral
-    // when the old key was counting (it stops counting once revoked as
-    // "Converted to …"), otherwise it consumes one extra slot.
+    // that type must still be allowed, and the target plan + device limit must
+    // be within what the super admin granted. Quota-wise a conversion is
+    // net-neutral when the old key was counting (it stops counting once
+    // revoked as "Converted to …"), otherwise it consumes one extra slot.
     let whitelabel = null;
     if (session.role === 'whitelabel') {
         whitelabel = await getWhitelabel(session.sub);
@@ -34,6 +35,9 @@ export async function POST(req) {
         const allowed = Array.isArray(whitelabel.allowedModes) ? whitelabel.allowedModes : [];
         if (!allowed.includes(convertedMode))
             return NextResponse.json({ error: `License type "${convertedMode}" is no longer allowed for this account` }, { status: 403 });
+        const allowedPlans = resolveWlPlans(whitelabel);
+        if (!allowedPlans.includes(plan))
+            return NextResponse.json({ error: `Key duration "${plan}" is not allowed for this account` }, { status: 403 });
         const oldWasCounted = !(oldLicense.revoked && typeof oldLicense.revokedReason === 'string' && oldLicense.revokedReason.startsWith('Converted to'));
         if (!oldWasCounted) {
             const used = await countIssuedLicenses(session.sub);
@@ -52,8 +56,13 @@ export async function POST(req) {
     const DEFAULT_FEATURES = { mobile: true, trustBuilder: true, autoReply: true, chatbot: true, liveChat: true, groupGrabber: true, aiAutomation: true, forms: true };
 
     const dl          = Math.max(1, Math.min(255, parseInt(deviceLimit) || 1));
-    const expiryTs    = planToExpiry(plan, customDays);
+    if (whitelabel) {
+        const maxDevices = resolveWlMaxDevices(whitelabel);
+        if (dl > maxDevices)
+            return NextResponse.json({ error: `Device limit ${dl} exceeds your maximum of ${maxDevices} per key` }, { status: 403 });
+    }
     const isLifetime  = plan === 'lifetime';
+    let expiryTs      = planToExpiry(plan, customDays);
     // Carry the original license's type through — this used to be dropped
     // entirely, which silently turned a converted cloud/app trial into a
     // desktop-style key (and would crash for cloud, whose machineId is null).
@@ -63,7 +72,14 @@ export async function POST(req) {
         : ((machineIdOverride && machineIdOverride.trim())
             ? machineIdOverride.trim().toUpperCase()
             : oldLicense.machineId);
-    const newKey      = generateKey({ machineId: resolvedMachineId || 'CLOUD', expiryTs, deviceLimit: dl, licenseMode });
+    let newKey      = generateKey({ machineId: resolvedMachineId || 'CLOUD', expiryTs, deviceLimit: dl, licenseMode });
+    // Same-second collision guard (mirrors the generate route)
+    if (!isLifetime) {
+        for (let tries = 0; tries < 5 && await getLicense(newKey); tries++) {
+            expiryTs += 1;
+            newKey = generateKey({ machineId: resolvedMachineId || 'CLOUD', expiryTs, deviceLimit: dl, licenseMode });
+        }
+    }
 
     const priceNum        = Math.max(0, parseFloat(price) || 0);
     const discountedRaw   = (discountedPrice === '' || discountedPrice == null)

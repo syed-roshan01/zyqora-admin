@@ -5,9 +5,10 @@ import { requireSuper } from '@/lib/auth';
 import {
     getAdminByUsername, getAffiliateByUsername, getWhitelabelByUsername, saveWhitelabel,
 } from '@/lib/kv';
-import { LICENSE_MODES } from '@/lib/license';
+import { LICENSE_MODES, WL_PLANS } from '@/lib/license';
 
 const MAX_LIMIT = 999999;
+const MAX_DEVICES = 255;
 
 export async function POST(req) {
     const { error, status, session } = await requireSuper(req);
@@ -46,9 +47,24 @@ export async function POST(req) {
     if (!allowedModes.length)
         return NextResponse.json({ error: 'Select at least one license type' }, { status: 400 });
 
+    // Which key durations (1/3/6 months, 1 year, custom) this client may issue
+    const allowedPlans = Array.isArray(body?.allowedPlans)
+        ? [...new Set(body.allowedPlans.filter(p => WL_PLANS.includes(p)))]
+        : [...WL_PLANS];
+    if (!allowedPlans.length)
+        return NextResponse.json({ error: 'Select at least one key duration' }, { status: 400 });
+
     const licenseLimit = Math.floor(Number(body?.licenseLimit));
     if (!Number.isFinite(licenseLimit) || licenseLimit < 1 || licenseLimit > MAX_LIMIT)
         return NextResponse.json({ error: `License limit must be between 1 and ${MAX_LIMIT}` }, { status: 400 });
+
+    // Maximum devices per key this client may issue
+    let maxDevices = MAX_DEVICES;
+    if (body?.maxDevices !== undefined && body?.maxDevices !== null && body?.maxDevices !== '') {
+        maxDevices = Math.floor(Number(body.maxDevices));
+        if (!Number.isFinite(maxDevices) || maxDevices < 1 || maxDevices > MAX_DEVICES)
+            return NextResponse.json({ error: `Max devices must be between 1 and ${MAX_DEVICES}` }, { status: 400 });
+    }
 
     const passwordHash = await bcrypt.hash(password, 12);
 
@@ -64,6 +80,8 @@ export async function POST(req) {
         website,
         notes,
         allowedModes,
+        allowedPlans,
+        maxDevices,
         licenseLimit,
         active: true,
         createdBy: session.sub,
