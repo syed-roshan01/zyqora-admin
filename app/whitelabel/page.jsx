@@ -170,6 +170,10 @@ export default function WhitelabelPage() {
     const [pwBusy, setPwBusy] = useState(false);
     const [pwErr, setPwErr] = useState('');
 
+    // Delete (two-step inline confirm, like the affiliates page)
+    const [delState, setDelState] = useState(null); // { id, name, step: 1|2 }
+    const [delBusy, setDelBusy] = useState(false);
+
     // Licenses drill-down modal
     const [viewTarget, setViewTarget] = useState(null);
     const [viewData, setViewData] = useState(null);
@@ -320,6 +324,20 @@ export default function WhitelabelPage() {
         }
     };
 
+    const deleteClient = async () => {
+        setDelBusy(true);
+        const r = await apiFetch(`/api/whitelabel/${delState.id}/delete`, { method: 'POST' });
+        if (r?.ok) {
+            toast.success(`"${delState.name}" deleted — their issued licenses remain in records`);
+            setDelState(null);
+            load();
+        } else {
+            toast.error(r?.data?.error || 'Failed to delete client');
+            setDelState(d => (d ? { ...d, step: 1 } : null));
+        }
+        setDelBusy(false);
+    };
+
     const changePw = async (e) => {
         e.preventDefault();
         setPwBusy(true);
@@ -458,17 +476,44 @@ export default function WhitelabelPage() {
                                                 </td>
                                                 <td>{fmtDate(c.createdAt)}</td>
                                                 <td>
-                                                    <div style={{ display: 'flex', gap: 6 }}>
-                                                        <button className="btn btn-ghost btn-sm" onClick={() => viewLicenses(c)} title="View licenses">📋</button>
-                                                        <button className="btn btn-ghost btn-sm" onClick={() => openEdit(c)} title="Edit details, types & limit">✎</button>
-                                                        <button className="btn btn-ghost btn-sm" onClick={() => { setPwTarget(c); setNewPw(''); setPwErr(''); }} title="Reset password">🔑</button>
-                                                        <button
-                                                            className="btn btn-danger btn-sm"
-                                                            onClick={() => toggleActive(c)}
-                                                        >
-                                                            {c.active ? 'Disable' : 'Enable'}
-                                                        </button>
-                                                    </div>
+                                                    {delState?.id === c.id ? (
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                            {delState.step === 1 ? (
+                                                                <>
+                                                                    <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 600 }}>Sure?</span>
+                                                                    <button className="btn btn-ghost btn-sm" style={{ color: '#ef4444', borderColor: 'rgba(239,68,68,.3)' }}
+                                                                        onClick={() => setDelState({ id: c.id, name: c.name, step: 2 })}>Yes</button>
+                                                                    <button className="btn btn-ghost btn-sm" onClick={() => setDelState(null)}>No</button>
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>Permanent!</span>
+                                                                    <button className="btn btn-ghost btn-sm" style={{ color: '#ef4444', borderColor: 'rgba(239,68,68,.3)' }}
+                                                                        onClick={deleteClient} disabled={delBusy}>{delBusy ? '…' : 'Confirm'}</button>
+                                                                    <button className="btn btn-ghost btn-sm" onClick={() => setDelState(null)} disabled={delBusy}>Cancel</button>
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                    ) : (
+                                                        <div style={{ display: 'flex', gap: 6 }}>
+                                                            <button className="btn btn-ghost btn-sm" onClick={() => viewLicenses(c)} title="View licenses">📋</button>
+                                                            <button className="btn btn-ghost btn-sm" onClick={() => openEdit(c)} title="Edit details, types, durations & limits">✎</button>
+                                                            <button className="btn btn-ghost btn-sm" onClick={() => { setPwTarget(c); setNewPw(''); setPwErr(''); }} title="Reset password">🔑</button>
+                                                            <button
+                                                                className="btn btn-danger btn-sm"
+                                                                onClick={() => toggleActive(c)}
+                                                            >
+                                                                {c.active ? 'Disable' : 'Enable'}
+                                                            </button>
+                                                            <button
+                                                                className="btn btn-danger btn-sm"
+                                                                onClick={() => setDelState({ id: c.id, name: c.name, step: 1 })}
+                                                                title="Delete permanently — issued licenses stay in records"
+                                                            >
+                                                                🗑
+                                                            </button>
+                                                        </div>
+                                                    )}
                                                 </td>
                                             </tr>
                                         );
