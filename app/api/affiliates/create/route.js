@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
 import { requireSuper } from '@/lib/auth';
-import { getAffiliateByUsername, saveAffiliate } from '@/lib/kv';
+import { getAffiliateByUsername, getAdminByUsername, getWhitelabelByUsername, saveAffiliate } from '@/lib/kv';
 
 export async function POST(req) {
     const { error, status, session } = await requireSuper(req);
@@ -18,8 +18,14 @@ export async function POST(req) {
     if (!name) return NextResponse.json({ error: 'Display name is required' }, { status: 400 });
     if (!password || password.length < 6) return NextResponse.json({ error: 'Password must be at least 6 characters' }, { status: 400 });
 
-    const existing = await getAffiliateByUsername(username);
-    if (existing) return NextResponse.json({ error: 'Username already taken' }, { status: 409 });
+    // All account types share one login endpoint — a username must be unique
+    // across admins, affiliates and whitelabel clients.
+    const [affDup, adminDup, wlDup] = await Promise.all([
+        getAffiliateByUsername(username),
+        getAdminByUsername(username),
+        getWhitelabelByUsername(username),
+    ]);
+    if (affDup || adminDup || wlDup) return NextResponse.json({ error: 'Username already taken' }, { status: 409 });
 
     const passwordHash = await bcrypt.hash(password, 12);
 

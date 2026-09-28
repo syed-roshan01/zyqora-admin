@@ -11,6 +11,7 @@ function fmtDate(ts) {
 
 function getDaysLeft(lic) {
     if (lic.isLifetime) return null;
+    if (!lic.expiryTs) return null; // missing expiry — treat as unknown, not NaN
     const secs = lic.expiryTs - Math.floor(Date.now() / 1000);
     return Math.floor(secs / 86400);
 }

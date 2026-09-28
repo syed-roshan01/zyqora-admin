@@ -130,7 +130,10 @@ export default function WithdrawalsPage() {
     const moneyLeft      = totalRevenueBasis - allWithdrawn;
 
     const openAdd = () => {
-        setForm(EMPTY_FORM);
+        // Fresh form each time — EMPTY_FORM captured "today" at module load,
+        // which would default the date to yesterday if the page stayed open
+        // past midnight.
+        setForm({ ...EMPTY_FORM, date: toDateInput() });
         setErr('');
         setShowAdd(true);
     };

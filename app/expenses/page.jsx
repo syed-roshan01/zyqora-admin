@@ -173,7 +173,9 @@ export default function ExpensesPage() {
             return;
         }
 
-        setForm(EMPTY_FORM);
+        // Fresh form with today's date (EMPTY_FORM's date is frozen at module
+        // load — stale if the page stayed open past midnight).
+        setForm({ ...EMPTY_FORM, spentDate: toDateInput() });
         setBusy(false);
         if (isSuper) setShowAddForm(false);
         load();

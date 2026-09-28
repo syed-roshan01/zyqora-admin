@@ -138,9 +138,11 @@ export default function LicensesPage() {
     const [invoiceBusy, setInvoiceBusy] = useState(false);
     const [showRev,  setShowRev]  = useState(null); // key to revoke
     const [revReason,setRevReason]= useState('');
+    const [revErr,   setRevErr]   = useState('');
     const [revBusy,  setRevBusy]  = useState(false);
     const [copied,   setCopied]   = useState('');
     const [showDel,  setShowDel]  = useState(null); // { key, clientName }
+    const [delErr,   setDelErr]   = useState('');
     const [delBusy,  setDelBusy]  = useState(false);
     const [showDetail,setShowDetail]= useState(null);   // license object
     const [showEdit,  setShowEdit]  = useState(null);   // license object
@@ -436,15 +438,19 @@ export default function LicensesPage() {
 
     const revoke = async () => {
         setRevBusy(true);
+        setRevErr('');
         const r = await apiFetch('/api/licenses/revoke', { method: 'POST', body: { key: showRev, reason: revReason } });
         if (r?.ok) { setShowRev(null); setRevReason(''); load(); }
+        else setRevErr(r?.data?.error || 'Failed to revoke');
         setRevBusy(false);
     };
 
     const deleteLic = async () => {
         setDelBusy(true);
+        setDelErr('');
         const r = await apiFetch('/api/licenses/delete', { method: 'POST', body: { key: showDel.key } });
         if (r?.ok) { setShowDel(null); load(); }
+        else setDelErr(r?.data?.error || 'Failed to delete');
         setDelBusy(false);
     };
 
@@ -802,7 +808,7 @@ export default function LicensesPage() {
                                                     </>
                                                 )}
                                             </td>
-                                            <td><span className="mono" style={{ fontSize: 11 }}>{l.licenseMode === 'cloud' ? '—' : `${l.machineId?.slice(0, 16)}…`}</span></td>
+                                            <td><span className="mono" style={{ fontSize: 11 }}>{l.licenseMode === 'cloud' || !l.machineId ? '—' : `${l.machineId.slice(0, 16)}…`}</span></td>
                                             <td>{l.issuedByName}</td>
                                             <td>{fmtDate(l.issuedAt)}</td>
                                             <td>
@@ -820,7 +826,7 @@ export default function LicensesPage() {
                                                     {!l.revoked && (
                                                         <button
                                                             className="btn btn-danger btn-sm"
-                                                            onClick={() => { setShowRev(l.key); setRevReason(''); }}
+                                                            onClick={() => { setShowRev(l.key); setRevReason(''); setRevErr(''); }}
                                                         >
                                                             Revoke
                                                         </button>
@@ -839,7 +845,7 @@ export default function LicensesPage() {
                                                         <button
                                                             className="btn btn-ghost btn-sm"
                                                             style={{ color: '#ef4444', borderColor: 'rgba(239,68,68,.3)' }}
-                                                            onClick={() => setShowDel({ key: l.key, clientName: l.clientName, price: Math.max(0, parseFloat(l.discountedPrice ?? l.price) || 0), plan: l.plan || '' })}
+                                                            onClick={() => { setShowDel({ key: l.key, clientName: l.clientName, price: Math.max(0, parseFloat(l.discountedPrice ?? l.price) || 0), plan: l.plan || '' }); setDelErr(''); }}
                                                         >
                                                             Delete
                                                         </button>
@@ -1114,6 +1120,7 @@ export default function LicensesPage() {
                             <div style={{ fontFamily: 'Courier New, monospace', fontSize: 11, color: '#64748b', background: 'rgba(255,255,255,.03)', borderRadius: 7, padding: '8px 12px', wordBreak: 'break-all' }}>
                                 {showDel.key}
                             </div>
+                            {delErr && <div className="form-error">{delErr}</div>}
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-ghost" onClick={() => setShowDel(null)} disabled={delBusy}>Cancel</button>
@@ -1146,6 +1153,7 @@ export default function LicensesPage() {
                                     onChange={e => setRevReason(e.target.value)}
                                     placeholder="e.g. Refund requested" autoFocus />
                             </div>
+                            {revErr && <div className="form-error">{revErr}</div>}
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-ghost" onClick={() => setShowRev(null)}>Cancel</button>

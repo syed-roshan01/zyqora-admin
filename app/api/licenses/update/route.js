@@ -27,8 +27,10 @@ export async function POST(req) {
         ...(clientEmail      !== undefined ? { clientEmail:      clientEmail.trim()             } : {}),
         ...(businessCategory !== undefined ? { businessCategory: businessCategory.trim()        } : {}),
         ...(website          !== undefined ? { website:          website.trim() || 'No website' } : {}),
-        price: parseFloat(price) || 0,
-        notes: (notes || '').trim(),
+        // Price and notes are also opt-in: a partial update that omits them
+        // must not silently zero the price or wipe the notes.
+        ...(price            !== undefined ? { price:            Math.max(0, parseFloat(price) || 0) } : {}),
+        ...(notes            !== undefined ? { notes:            notes.trim()                   } : {}),
         ...(features !== undefined ? { features } : {}),
         ...(session.role === 'super' && affiliateId !== undefined ? { affiliateId: affiliateId || null, affiliateName: affiliateName || null } : {}),
         ...(canSetValidationException

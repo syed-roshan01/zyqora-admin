@@ -13,6 +13,7 @@ function fmtDate(ts) {
 
 function getDaysLeft(l) {
     if (l.isLifetime) return null;
+    if (!l.expiryTs) return null; // missing expiry — treat as unknown, not NaN
     return Math.floor((l.expiryTs - Math.floor(Date.now() / 1000)) / 86400);
 }
 
