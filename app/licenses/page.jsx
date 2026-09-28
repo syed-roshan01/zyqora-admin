@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react';
 import AppLayout from '@/components/AppLayout';
 import { apiFetch } from '@/lib/apiFetch';
 import Modal from '@/components/Modal';
-import Icon from '@/components/Icons';
 import { TableSkeleton } from '@/components/Skeleton';
 import { useToast } from '@/components/Toast';
 
@@ -319,23 +318,6 @@ export default function LicensesPage() {
         .filter(l => !l.revoked)
         .reduce((s, l) => s + Math.max(0, Number(l.discountedPrice ?? l.price) || 0), 0);
     const fmtCompactINR = (n) => '₹' + new Intl.NumberFormat('en-IN', { notation: 'compact', maximumFractionDigits: 1 }).format(n);
-
-    // Deterministic gradient avatar per client
-    const AVATAR_GRADS = [
-        'linear-gradient(135deg, #8b5cf6, #6d28d9)',
-        'linear-gradient(135deg, #3b82f6, #1d4ed8)',
-        'linear-gradient(135deg, #14b8a6, #0f766e)',
-        'linear-gradient(135deg, #f59e0b, #b45309)',
-        'linear-gradient(135deg, #ec4899, #9d174d)',
-        'linear-gradient(135deg, #6366f1, #4338ca)',
-    ];
-    const clientAvatar = (l) => {
-        const seed = l.clientName || l.key || '?';
-        let h = 0;
-        for (const ch of seed) h = (h * 31 + ch.charCodeAt(0)) % 997;
-        const initials = seed.split(/\s+/).map(w => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
-        return { grad: AVATAR_GRADS[h % AVATAR_GRADS.length], initials: initials || '?' };
-    };
 
     // Reset to the first page whenever the filters change
     useEffect(() => { setPage(1); }, [search, typeFilter, statusFilter]);
@@ -768,15 +750,12 @@ export default function LicensesPage() {
                 <div className="page-header">
                     <div>
                         <div className="page-title">Licenses</div>
-                        <div className="page-subtitle">
-                            {totalKeys} key{totalKeys !== 1 ? 's' : ''} under your watch
-                            {expiringKeys > 0 ? ` — ${expiringKeys} need${expiringKeys === 1 ? 's' : ''} renewal this week` : ' — all calm'}
-                        </div>
+                        <div className="page-subtitle">Generate, track and revoke license keys</div>
                     </div>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                         <select
                             className="form-select"
-                            style={{ width: 120 }}
+                            style={{ width: 110 }}
                             value={exportFormat}
                             onChange={e => setExportFormat(e.target.value)}
                         >
@@ -792,48 +771,37 @@ export default function LicensesPage() {
                             {exportBusy ? 'Preparing…' : 'Export'}
                         </button>
                         <button className="btn btn-primary" onClick={() => { setShowGen(true); setGenKey(''); setGeneratedLicense(null); setForm(DEFAULT_FORM); }}>
-                            + Generate Key
+                            Generate Key
                         </button>
                     </div>
                 </div>
 
                 <div className="page-body">
-                    {/* Insight strip */}
-                    <div className="db-strip db-in">
-                        <div className="db-pill">
-                            <div className="db-pill-icon"><Icon name="key" size={14} /></div>
-                            <div>
-                                <div className="db-pill-num">{totalKeys}</div>
-                                <div className="db-pill-lab">keys issued</div>
-                            </div>
+                    {/* Quiet stat row */}
+                    <div className="lic-stats db-in">
+                        <div className="lic-stat">
+                            <div className="lic-stat-num">{totalKeys}</div>
+                            <div className="lic-stat-lab">Issued</div>
                         </div>
-                        <div className="db-pill">
-                            <div className="db-pill-icon" data-tone="green"><Icon name="check" size={14} /></div>
-                            <div>
-                                <div className="db-pill-num">{activeKeys}</div>
-                                <div className="db-pill-lab">active now</div>
-                            </div>
+                        <div className="lic-stat-sep" />
+                        <div className="lic-stat">
+                            <div className="lic-stat-num">{activeKeys}</div>
+                            <div className="lic-stat-lab">Active</div>
                         </div>
-                        <div className="db-pill">
-                            <div className="db-pill-icon" data-tone={expiringKeys > 0 ? 'amber' : undefined}><Icon name="clock" size={14} /></div>
-                            <div>
-                                <div className="db-pill-num">{expiringKeys}</div>
-                                <div className="db-pill-lab">expiring ≤ 7 days</div>
-                            </div>
+                        <div className="lic-stat-sep" />
+                        <div className="lic-stat">
+                            <div className="lic-stat-num" style={{ color: expiringKeys > 0 ? 'var(--amber)' : undefined }}>{expiringKeys}</div>
+                            <div className="lic-stat-lab">Expiring ≤ 7d</div>
                         </div>
-                        <div className="db-pill">
-                            <div className="db-pill-icon" data-tone="red"><Icon name="shield" size={14} /></div>
-                            <div>
-                                <div className="db-pill-num">{revokedKeys}</div>
-                                <div className="db-pill-lab">revoked</div>
-                            </div>
+                        <div className="lic-stat-sep" />
+                        <div className="lic-stat">
+                            <div className="lic-stat-num">{revokedKeys}</div>
+                            <div className="lic-stat-lab">Revoked</div>
                         </div>
-                        <div className="db-pill">
-                            <div className="db-pill-icon" data-tone="teal"><Icon name="rupee" size={14} /></div>
-                            <div>
-                                <div className="db-pill-num">{fmtCompactINR(revenueTotal)}</div>
-                                <div className="db-pill-lab">revenue booked</div>
-                            </div>
+                        <div className="lic-stat-sep" />
+                        <div className="lic-stat">
+                            <div className="lic-stat-num">{fmtCompactINR(revenueTotal)}</div>
+                            <div className="lic-stat-lab">Revenue booked</div>
                         </div>
                     </div>
                     {/* Whitelabel quota card — live values from the super admin's settings */}
@@ -903,7 +871,7 @@ export default function LicensesPage() {
                             <input
                                 className="form-input search-input"
                                 style={{ maxWidth: 'none' }}
-                                placeholder="Search by client, key, phone or machine ID…"
+                                placeholder="Search client, key, phone or machine ID"
                                 value={search}
                                 onChange={e => setSearch(e.target.value)}
                             />
@@ -913,10 +881,10 @@ export default function LicensesPage() {
                         </div>
                         <div className="seg">
                             {[
-                                { value: 'all',     label: 'All types' },
-                                { value: 'desktop', label: '🖥 Desktop' },
-                                { value: 'cloud',   label: '☁ Cloud' },
-                                { value: 'app',     label: '📱 App' },
+                                { value: 'all',     label: 'All' },
+                                { value: 'desktop', label: 'Desktop' },
+                                { value: 'cloud',   label: 'Cloud' },
+                                { value: 'app',     label: 'App' },
                             ].map(t => (
                                 <button
                                     key={t.value}
@@ -929,23 +897,22 @@ export default function LicensesPage() {
                         </div>
                     </div>
 
-                    {/* Status tabs with live counts */}
-                    <div className="lic-status-tabs db-in">
+                    {/* Status tabs */}
+                    <div className="ltabs db-in">
                         {[
-                            { value: 'all',       label: 'All',          count: searchTypeBase.length, dot: null },
-                            { value: 'active',    label: 'Active',       count: tabCounts.active,      dot: '#22c55e' },
-                            { value: 'expiring',  label: 'Expiring soon',count: tabCounts.expiring,    dot: '#f59e0b' },
-                            { value: 'expired',   label: 'Expired',     count: tabCounts.expired,     dot: '#64748b' },
-                            { value: 'revoked',   label: 'Revoked',     count: tabCounts.revoked,     dot: '#ef4444' },
+                            { value: 'all',      label: 'All',           count: searchTypeBase.length },
+                            { value: 'active',   label: 'Active',        count: tabCounts.active },
+                            { value: 'expiring', label: 'Expiring soon', count: tabCounts.expiring },
+                            { value: 'expired',  label: 'Expired',       count: tabCounts.expired },
+                            { value: 'revoked',  label: 'Revoked',       count: tabCounts.revoked },
                         ].map(t => (
                             <button
                                 key={t.value}
-                                className={`lic-tab${statusFilter === t.value ? ' on' : ''}`}
+                                className={`ltab${statusFilter === t.value ? ' on' : ''}`}
                                 onClick={() => setStatusFilter(t.value)}
                             >
-                                {t.dot && <span className="lic-tab-dot" style={{ background: t.dot }} />}
                                 {t.label}
-                                <span className="lic-tab-count">{t.count}</span>
+                                <span className="ltab-n">{t.count}</span>
                             </button>
                         ))}
                     </div>
@@ -954,18 +921,17 @@ export default function LicensesPage() {
                         <TableSkeleton rows={8} />
                     ) : filtered.length === 0 ? (
                         <div className="lic-empty db-in">
-                            <div className="lic-empty-icon">🔑</div>
                             <div className="lic-empty-title">
-                                {licenses.length === 0 ? 'No licenses yet' : 'Nothing matches these filters'}
+                                {licenses.length === 0 ? 'No licenses yet' : 'No results'}
                             </div>
                             <div className="lic-empty-sub">
                                 {licenses.length === 0
-                                    ? 'Generate your first key and it will show up here with live status.'
-                                    : 'Try a different search, type or status — or clear everything and start fresh.'}
+                                    ? 'Generate your first key and it will appear here.'
+                                    : 'Try a different search, type or status.'}
                             </div>
                             {licenses.length > 0 && (search || typeFilter !== 'all' || statusFilter !== 'all') && (
                                 <button className="btn btn-ghost btn-sm" onClick={() => { setSearch(''); setTypeFilter('all'); setStatusFilter('all'); }}>
-                                    Clear all filters
+                                    Clear filters
                                 </button>
                             )}
                         </div>
@@ -988,77 +954,52 @@ export default function LicensesPage() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {paged.map((l, idx) => {
+                                {paged.map(l => {
                                     const days = daysLeftOf(l, NOW);
                                     const isExpired = !l.isLifetime && days !== null && days < 0;
-                                    const needsRenewal = !l.revoked && !isExpired && days !== null && days >= 0 && days <= 7;
-                                    const { grad, initials } = clientAvatar(l);
                                     return (
-                                        <tr key={`${safePage}-${l.key}`} className={needsRenewal ? 'lic-row-soon' : ''} style={{ animationDelay: `${Math.min(idx, 12) * 30}ms` }}>
+                                        <tr key={l.key}>
                                             <td>
-                                                <div className="lic-client">
-                                                    <div className="lic-avatar-sm" style={{ background: grad }}>{initials}</div>
-                                                    <div style={{ minWidth: 0 }}>
-                                                        <div className="lic-client-name" onClick={() => setShowDetail(l)} title="Open full details">
-                                                            {l.clientName || '—'}
-                                                        </div>
-                                                        {l.clientPhone && <div className="lic-client-sub">{l.clientPhone}</div>}
-                                                    </div>
-                                                </div>
+                                                <div className="lic-name" onClick={() => setShowDetail(l)}>{l.clientName || '—'}</div>
+                                                {l.clientPhone && <div className="lic-sub">{l.clientPhone}</div>}
                                             </td>
                                             <td>
-                                                <button className="key-copy" title="Click to copy" onClick={() => copyKey(l.key)}>
-                                                    {copied === l.key ? '✓ Copied!' : l.key.slice(0, 18) + '…'}
+                                                <button className="lic-key" title="Copy" onClick={() => copyKey(l.key)}>
+                                                    {copied === l.key ? 'Copied' : l.key.slice(0, 18) + '…'}
                                                 </button>
                                             </td>
                                             <td>
-                                                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
-                                                    <span
-                                                        className="badge"
-                                                        style={{
-                                                            background: l.licenseMode === 'cloud' ? 'rgba(37,211,102,.15)' : l.licenseMode === 'app' ? 'rgba(74,158,255,.15)' : 'rgba(139,146,176,.15)',
-                                                            color: l.licenseMode === 'cloud' ? '#25D366' : l.licenseMode === 'app' ? '#4a9eff' : '#8b93b0',
-                                                        }}
-                                                    >
-                                                        {l.licenseMode === 'cloud' ? 'Cloud' : l.licenseMode === 'app' ? 'App' : 'Desktop'}
-                                                    </span>
-                                                    {l.reviewAccess && (
-                                                        <span className="badge" style={{ background: 'rgba(245,158,11,.15)', color: '#f59e0b' }} title="Bypasses device binding — works on any device">
-                                                            Reviewer
-                                                        </span>
-                                                    )}
-                                                </div>
+                                                <span className="lic-tag">
+                                                    {l.licenseMode === 'cloud' ? 'Cloud' : l.licenseMode === 'app' ? 'App' : 'Desktop'}
+                                                    {l.reviewAccess ? ' · Review' : ''}
+                                                </span>
                                             </td>
-                                            <td><span className={`badge badge-plan-${l.plan}`}>{l.plan}</span></td>
-                                            <td style={{ textAlign: 'center', fontWeight: 600 }}>{l.deviceLimit}</td>
+                                            <td><span className="lic-tag">{l.plan}</span></td>
+                                            <td className="lic-num">{l.deviceLimit}</td>
                                             <td>
                                                 {l.isLifetime ? (
-                                                    <span style={{ color: '#a78bfa', fontWeight: 600 }}>Lifetime</span>
+                                                    <span className="lic-sub" style={{ color: 'var(--text-dim)' }}>Lifetime</span>
                                                 ) : (
-                                                    <div>
-                                                        <div style={{ fontSize: 12.5 }}>{fmtDate(l.expiryTs)}</div>
+                                                    <>
+                                                        <div className="lic-sub" style={{ color: 'var(--text-dim)' }}>{fmtDate(l.expiryTs)}</div>
                                                         {days !== null && days >= 0 && (
-                                                            <span className={`days-chip${needsRenewal ? ' soon' : ''}`} style={needsRenewal ? {} : { background: 'rgba(255,255,255,.04)', color: 'var(--text-ghost)', border: '1px solid var(--border)' }}>
-                                                                {days}d left
-                                                            </span>
+                                                            <div className="lic-sub" style={{ color: days <= 7 ? 'var(--amber)' : undefined }}>
+                                                                {days === 0 ? 'Last day' : `${days}d left`}
+                                                            </div>
                                                         )}
-                                                        {days !== null && days < 0 && <span className="days-chip urgent">Expired</span>}
-                                                    </div>
+                                                        {days !== null && days < 0 && <div className="lic-sub" style={{ color: 'var(--red)' }}>Expired</div>}
+                                                    </>
                                                 )}
                                             </td>
-                                            <td><span className="mono" style={{ fontSize: 11 }}>{l.licenseMode === 'cloud' || !l.machineId ? '—' : `${l.machineId.slice(0, 16)}…`}</span></td>
+                                            <td><span className="mono lic-sub">{l.licenseMode === 'cloud' || !l.machineId ? '—' : `${l.machineId.slice(0, 16)}…`}</span></td>
                                             <td>
-                                                <div style={{ fontSize: 12.5 }}>{l.issuedByName}</div>
-                                                <div className="lic-client-sub">{fmtDate(l.issuedAt)}</div>
+                                                <div className="lic-sub" style={{ color: 'var(--text-dim)' }}>{l.issuedByName}</div>
+                                                <div className="lic-sub">{fmtDate(l.issuedAt)}</div>
                                             </td>
                                             <td>
-                                                {l.revoked   && <span className="badge badge-revoked">Revoked</span>}
-                                                {!l.revoked && isExpired && <span className="badge badge-expired">Expired</span>}
-                                                {!l.revoked && !isExpired && (
-                                                    <span className="badge badge-active">
-                                                        <span className="lic-dot" />Active
-                                                    </span>
-                                                )}
+                                                <span className={`lic-status s-${l.revoked ? 'revoked' : isExpired ? 'expired' : 'active'}`}>
+                                                    {l.revoked ? 'Revoked' : isExpired ? 'Expired' : 'Active'}
+                                                </span>
                                             </td>
                                             <td>
                                                 <div style={{ display: 'flex', gap: 6 }}>
@@ -1066,10 +1007,10 @@ export default function LicensesPage() {
                                                         className="btn btn-ghost btn-sm"
                                                         onClick={() => { setShowEdit(l); setEditForm({ clientName: l.clientName || '', clientPhone: l.clientPhone || '', clientEmail: l.clientEmail || '', businessCategory: l.businessCategory || '', website: l.website || '', price: l.price ?? '', notes: l.notes || '', affiliateId: l.affiliateId || '', affiliateName: l.affiliateName || '', features: { ...DEFAULT_FEATURES, ...(l.features || {}) } }); setEditErr(''); }}
                                                         title="Edit price & notes"
-                                                    >✎</button>
+                                                    >Edit</button>
                                                     {!l.revoked && (
                                                         <button
-                                                            className="btn btn-danger btn-sm"
+                                                            className="btn btn-ghost btn-sm"
                                                             onClick={() => { setShowRev(l.key); setRevReason(''); setRevErr(''); }}
                                                         >
                                                             Revoke
@@ -1077,8 +1018,7 @@ export default function LicensesPage() {
                                                     )}
                                                     {(l.plan === 'trial' || l.plan === 'trial1day') && !l.revoked && (
                                                         <button
-                                                            className="btn btn-sm"
-                                                            style={{ background: 'rgba(99,102,241,.15)', color: '#818cf8', border: '1px solid rgba(99,102,241,.35)' }}
+                                                            className="btn btn-ghost btn-sm"
                                                             onClick={() => openConvert(l)}
                                                             title="Convert this trial to a paid plan"
                                                         >
@@ -1087,8 +1027,7 @@ export default function LicensesPage() {
                                                     )}
                                                     {user?.role === 'super' && (
                                                         <button
-                                                            className="btn btn-ghost btn-sm"
-                                                            style={{ color: '#ef4444', borderColor: 'rgba(239,68,68,.3)' }}
+                                                            className="btn btn-ghost btn-sm lic-danger"
                                                             onClick={() => { setShowDel({ key: l.key, clientName: l.clientName, price: Math.max(0, parseFloat(l.discountedPrice ?? l.price) || 0), plan: l.plan || '' }); setDelErr(''); }}
                                                         >
                                                             Delete
@@ -1130,14 +1069,9 @@ export default function LicensesPage() {
                 >
                         {genKey ? (
                             <div className="modal-body">
-                                <div className="gen-success">
-                                    <div className="gen-success-badge">✓</div>
-                                    <div className="gen-success-title">Key is ready</div>
-                                    <div className="gen-success-sub">
-                                        {generatedLicense?.clientName
-                                            ? `Hand this key to ${generatedLicense.clientName} — it's active the moment they activate it.`
-                                            : 'Share it with your client — it activates on first use.'}
-                                    </div>
+                                <div className="gen-head">
+                                    <div className="gen-title">License generated</div>
+                                    <div className="gen-sub">Send this key to {generatedLicense?.clientName || 'your client'}. It activates on first use.</div>
                                 </div>
                                 <div className="gen-key-box">
                                     <div className="gen-key-label">LICENSE KEY</div>
@@ -1145,21 +1079,12 @@ export default function LicensesPage() {
                                 </div>
                                 {generatedLicense && (
                                     <div className="gen-meta">
-                                        <span className="badge" style={{ background: 'rgba(37,211,102,.15)', color: '#25D366' }}>
-                                            {generatedLicense.licenseMode === 'cloud' ? 'Cloud' : generatedLicense.licenseMode === 'app' ? 'App' : 'Desktop'}
-                                        </span>
-                                        <span className={`badge badge-plan-${generatedLicense.plan}`}>{generatedLicense.plan}</span>
-                                        <span className="badge" style={{ background: 'rgba(139,92,246,.12)', color: '#a78bfa' }}>
-                                            {generatedLicense.deviceLimit} device{generatedLicense.deviceLimit !== 1 ? 's' : ''}
-                                        </span>
-                                        {!generatedLicense.isLifetime && (
-                                            <span className="badge" style={{ background: 'rgba(255,255,255,.05)', color: '#94a3b8' }}>
-                                                {generatedLicense.expiryTs ? `until ${fmtDate(generatedLicense.expiryTs)}` : ''}
-                                            </span>
-                                        )}
-                                        {generatedLicense.isLifetime && (
-                                            <span className="badge" style={{ background: 'rgba(167,139,250,.12)', color: '#a78bfa' }}>Lifetime</span>
-                                        )}
+                                        {[
+                                            generatedLicense.licenseMode === 'cloud' ? 'Cloud' : generatedLicense.licenseMode === 'app' ? 'App' : 'Desktop',
+                                            generatedLicense.plan,
+                                            `${generatedLicense.deviceLimit} device${generatedLicense.deviceLimit !== 1 ? 's' : ''}`,
+                                            generatedLicense.isLifetime ? 'Lifetime' : (generatedLicense.expiryTs ? `valid until ${fmtDate(generatedLicense.expiryTs)}` : null),
+                                        ].filter(Boolean).join('  ·  ')}
                                     </div>
                                 )}
                                 <button
@@ -1167,7 +1092,7 @@ export default function LicensesPage() {
                                     style={{ width: '100%' }}
                                     onClick={() => { navigator.clipboard.writeText(genKey); setCopied('__genkey__'); setTimeout(() => setCopied(''), 2000); }}
                                 >
-                                    {copied === '__genkey__' ? '✓ Key Copied!' : 'Copy Key'}
+                                    {copied === '__genkey__' ? 'Key copied' : 'Copy Key'}
                                 </button>
                                 <button
                                     className="btn btn-ghost"
@@ -1189,7 +1114,7 @@ export default function LicensesPage() {
                             <form onSubmit={generate}>
                                 <div className="modal-body">
                                     <div className="form-section">
-                                        <div className="form-section-title">👤 Client details</div>
+                                        <div className="form-section-title">Client</div>
                                         <div className="form-row">
                                             <div className="form-group">
                                                 <label className="form-label">Client Name *</label>
@@ -1222,7 +1147,7 @@ export default function LicensesPage() {
                                     </div>
 
                                     <div className="form-section">
-                                        <div className="form-section-title">🔑 License setup</div>
+                                        <div className="form-section-title">License</div>
                                         <div className="form-group">
                                             <label className="form-label">License Type *</label>
                                             <select className="form-select" value={form.licenseMode}
@@ -1303,7 +1228,7 @@ export default function LicensesPage() {
                                     </div>
 
                                     <div className="form-section">
-                                        <div className="form-section-title">💰 Pricing & notes</div>
+                                        <div className="form-section-title">Pricing</div>
                                         <div className="form-row">
                                             <div className="form-group">
                                                 <label className="form-label">Price (₹)</label>
@@ -1345,25 +1270,23 @@ export default function LicensesPage() {
                                     </div>
 
                                     <div className="form-section">
-                                        <div className="form-section-title">🧩 Features included</div>
+                                        <div className="form-section-title">Features</div>
                                         <div className="form-group">
                                             <label className="form-label" style={{ marginBottom: 8 }}>Features Included</label>
-                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                                        <div className="feature-grid">
                                             {FEATURE_OPTIONS.map(({ key, label, sub }) => (
-                                                <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '8px 10px', borderRadius: 8, border: '1px solid', borderColor: form.features[key] ? '#7c3aed' : '#252d42', background: form.features[key] ? 'rgba(124,58,237,.1)' : 'transparent', transition: 'all .15s', userSelect: 'none' }}>
+                                                <label key={key} className={`feature-tile${form.features[key] ? ' on' : ''}`}>
                                                     <input type="checkbox" checked={form.features[key] ?? true}
-                                                        onChange={e => setForm(f => ({ ...f, features: { ...f.features, [key]: e.target.checked } }))}
-                                                        style={{ accentColor: '#7c3aed', width: 14, height: 14, flexShrink: 0 }} />
-                                                    <span style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                                                        <span style={{ fontSize: 12.5, fontWeight: 600, color: form.features[key] ? '#e2e8f0' : '#4a5980' }}>{label}</span>
-                                                        <span style={{ fontSize: 10.5, color: '#3a4560' }}>{sub}</span>
+                                                        onChange={e => setForm(f => ({ ...f, features: { ...f.features, [key]: e.target.checked } }))} />
+                                                    <span className="feature-tile-text">
+                                                        <span className="feature-tile-label">{label}</span>
+                                                        <span className="feature-tile-sub">{sub}</span>
                                                     </span>
                                                 </label>
                                             ))}
                                         </div>
-                                        <button type="button" onClick={() => setForm(f => ({ ...f, features: { ...DEFAULT_FEATURES } }))}
-                                            style={{ marginTop: 6, background: 'none', border: 'none', color: '#4a5980', fontSize: 11, cursor: 'pointer', textAlign: 'left', padding: 0 }}>
-                                            ↺ Select all
+                                        <button type="button" className="feature-reset" onClick={() => setForm(f => ({ ...f, features: { ...DEFAULT_FEATURES } }))}>
+                                            Select all
                                         </button>
                                         </div>
                                     </div>
