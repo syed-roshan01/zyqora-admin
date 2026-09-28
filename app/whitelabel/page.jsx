@@ -4,7 +4,8 @@ import { useRouter } from 'next/navigation';
 import AppLayout from '@/components/AppLayout';
 import { apiFetch } from '@/lib/apiFetch';
 import Modal from '@/components/Modal';
-import { TableSkeleton } from '@/components/Skeleton';
+import Icon from '@/components/Icons';
+import { CardsSkeleton } from '@/components/Skeleton';
 import { useToast } from '@/components/Toast';
 
 function fmtDate(ts) {
@@ -54,17 +55,9 @@ function partnershipEndPreview(months) {
     return new Date(end).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-function PartnershipCell({ c }) {
-    if (!c.partnershipEndTs) return <span className="dim">Unlimited</span>;
-    const daysLeft = Math.ceil((c.partnershipEndTs * 1000 - Date.now()) / 86400000);
-    if (daysLeft <= 0) return <span className="badge badge-revoked">Expired</span>;
-    const color = daysLeft <= 30 ? '#ef4444' : daysLeft <= 90 ? '#f59e0b' : '#22c55e';
-    return (
-        <div>
-            <span style={{ fontWeight: 700, color }}>{daysLeft}d left</span>
-            <div className="dim" style={{ fontSize: 11 }}>{fmtDate(c.partnershipEndTs)}</div>
-        </div>
-    );
+function planLabel(plan, customDays) {
+    if (plan === 'custom') return customDays ? `${customDays} days` : 'Custom';
+    return ({ monthly: '1 Month', '3months': '3 Months', '6months': '6 Months', yearly: '1 Year' })[plan] || plan;
 }
 
 const MODE_STYLE = {
@@ -357,15 +350,106 @@ export default function WhitelabelPage() {
         setViewTarget(c);
         setViewData(null);
         setLicsLoading(true);
+        setSel(new Set());
+        setBulkMode(null);
+        setBulkReason('');
         const r = await apiFetch(`/api/whitelabel/${c.id}/licenses`);
         if (r?.ok) setViewData(r.data);
         setLicsLoading(false);
     };
 
+    const closeView = () => {
+        setViewTarget(null);
+        setSel(new Set());
+        setBulkMode(null);
+        setBulkReason('');
+    };
+
+    const reloadView = async () => {
+        if (!viewTarget) return;
+        const r = await apiFetch(`/api/whitelabel/${viewTarget.id}/licenses`);
+        if (r?.ok) setViewData(r.data);
+    };
+
+    // ── bulk license management (super admin inside the drill-down) ──
+    const [sel, setSel] = useState(() => new Set());
+    const [bulkMode, setBulkMode] = useState(null); // 'revoke' | 'delete' | null
+    const [bulkReason, setBulkReason] = useState('');
+    const [bulkBusy, setBulkBusy] = useState(false);
+
+    const toggleSel = (key) => setSel(s => {
+        const n = new Set(s);
+        if (n.has(key)) n.delete(key); else n.add(key);
+        return n;
+    });
+    const allSelected = viewData?.licenses?.length > 0 && viewData.licenses.every(l => sel.has(l.key));
+    const toggleAll = () => setSel(allSelected ? new Set() : new Set((viewData?.licenses || []).map(l => l.key)));
+
+    // Per-row buttons reuse the bulk confirm flow with a single-key selection
+    const rowAction = (l, mode) => {
+        setSel(new Set([l.key]));
+        setBulkMode(mode);
+        setBulkReason('');
+    };
+
+    const runBulk = async () => {
+        const mode = bulkMode;
+        setBulkBusy(true);
+        const keys = [...sel];
+        let ok = 0, fail = 0;
+        for (const key of keys) {
+            const r = mode === 'revoke'
+                ? await apiFetch('/api/licenses/revoke', { method: 'POST', body: { key, reason: bulkReason } })
+                : await apiFetch('/api/licenses/delete', { method: 'POST', body: { key } });
+            if (r?.ok) ok++; else fail++;
+        }
+        setBulkBusy(false);
+        setBulkMode(null);
+        setBulkReason('');
+        setSel(new Set());
+        if (ok > 0) toast.success(`${ok} license${ok !== 1 ? 's' : ''} ${mode === 'revoke' ? 'revoked' : 'deleted'}`);
+        if (fail > 0) toast.error(`${fail} license${fail !== 1 ? 's' : ''} failed — try again`);
+        reloadView();
+        load();
+    };
+
+    const [wlSearch, setWlSearch] = useState('');
+    const visibleClients = clients.filter(c => {
+        const q = wlSearch.toLowerCase().trim();
+        if (!q) return true;
+        return c.name?.toLowerCase().includes(q)
+            || c.username?.toLowerCase().includes(q)
+            || c.businessName?.toLowerCase().includes(q)
+            || c.email?.toLowerCase().includes(q)
+            || c.phone?.includes(wlSearch.trim());
+    });
+
     const totalClients = clients.length;
     const activeClients = clients.filter(c => c.active).length;
     const totalIssued = clients.reduce((s, c) => s + (c.usedLicenses || 0), 0);
     const totalCapacity = clients.reduce((s, c) => s + (c.remainingLicenses || 0), 0);
+    const expiringSoon = clients.filter(c => {
+        if (!c.partnershipEndTs) return false;
+        const days = Math.ceil((c.partnershipEndTs * 1000 - Date.now()) / 86400000);
+        return days <= 30;
+    }).length;
+
+    // avatar gradients — deterministic per client id
+    const AVATAR_GRADS = [
+        'linear-gradient(135deg, #8b5cf6, #6d28d9)',
+        'linear-gradient(135deg, #3b82f6, #1d4ed8)',
+        'linear-gradient(135deg, #14b8a6, #0f766e)',
+        'linear-gradient(135deg, #f59e0b, #b45309)',
+        'linear-gradient(135deg, #ec4899, #9d174d)',
+        'linear-gradient(135deg, #6366f1, #4338ca)',
+    ];
+    const avatarFor = (c) => {
+        let h = 0;
+        for (const ch of (c.id || c.username || '')) h = (h * 31 + ch.charCodeAt(0)) % 997;
+        const initials = (c.name || c.username || '?')
+            .split(/\s+/).map(w => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
+        return { grad: AVATAR_GRADS[h % AVATAR_GRADS.length], initials: initials || '?' };
+    };
 
     return (
         <AppLayout>
@@ -379,147 +463,157 @@ export default function WhitelabelPage() {
                 </div>
 
                 <div className="page-body">
-                    {/* Stats */}
-                    <div className="stats-grid">
-                        <div className="stat-card">
-                            <div className="stat-label">Whitelabel Clients</div>
-                            <div className="stat-value stat-accent">{totalClients}</div>
-                            <div className="stat-sub">{activeClients} active</div>
+                    {/* Summary strip */}
+                    <div className="db-strip db-in">
+                        <div className="db-pill">
+                            <div className="db-pill-icon"><Icon name="layers" size={14} /></div>
+                            <div>
+                                <div className="db-pill-num">{totalClients}</div>
+                                <div className="db-pill-lab">client{totalClients !== 1 ? 's' : ''} total</div>
+                            </div>
                         </div>
-                        <div className="stat-card">
-                            <div className="stat-label">Licenses Issued by Clients</div>
-                            <div className="stat-value stat-blue">{totalIssued}</div>
-                            <div className="stat-sub">Across all whitelabel accounts</div>
+                        <div className="db-pill">
+                            <div className="db-pill-icon" data-tone="green"><Icon name="check" size={14} /></div>
+                            <div>
+                                <div className="db-pill-num">{activeClients}</div>
+                                <div className="db-pill-lab">active now</div>
+                            </div>
                         </div>
-                        <div className="stat-card">
-                            <div className="stat-label">Remaining Capacity</div>
-                            <div className="stat-value stat-green">{totalCapacity}</div>
-                            <div className="stat-sub">Unused license slots</div>
+                        <div className="db-pill">
+                            <div className="db-pill-icon" data-tone="blue"><Icon name="key" size={14} /></div>
+                            <div>
+                                <div className="db-pill-num">{totalIssued}</div>
+                                <div className="db-pill-lab">licenses issued</div>
+                            </div>
+                        </div>
+                        <div className="db-pill">
+                            <div className="db-pill-icon" data-tone="teal"><Icon name="zap" size={14} /></div>
+                            <div>
+                                <div className="db-pill-num">{totalCapacity}</div>
+                                <div className="db-pill-lab">quota remaining</div>
+                            </div>
+                        </div>
+                        <div className="db-pill">
+                            <div className="db-pill-icon" data-tone={expiringSoon > 0 ? 'amber' : undefined}><Icon name="clock" size={14} /></div>
+                            <div>
+                                <div className="db-pill-num">{expiringSoon}</div>
+                                <div className="db-pill-lab">partnerships expiring</div>
+                            </div>
                         </div>
                     </div>
 
-                    {/* Table */}
+                    {/* Search */}
+                    {clients.length > 0 && (
+                        <div className="wl-toolbar db-in">
+                            <input
+                                className="form-input wl-search"
+                                placeholder="Search clients by name, username, business, phone or email…"
+                                value={wlSearch}
+                                onChange={e => setWlSearch(e.target.value)}
+                            />
+                            <span className="wl-toolbar-count">{visibleClients.length} / {clients.length}</span>
+                        </div>
+                    )}
+
+                    {/* Client cards */}
                     {loading ? (
-                        <TableSkeleton rows={5} />
+                        <CardsSkeleton cards={3} />
                     ) : clients.length === 0 ? (
                         <div className="empty">
                             No whitelabel clients yet.<br />
                             <span style={{ fontSize: 12 }}>Create one to give a reseller their own login, allowed license types and a generation limit.</span>
                         </div>
+                    ) : visibleClients.length === 0 ? (
+                        <div className="empty">No clients match “{wlSearch}”</div>
                     ) : (
-                        <div className="table-wrap">
-                            <table>
-                                <thead>
-                                    <tr>
-                                        <th>Client</th>
-                                        <th>Contact</th>
-                                        <th>Business</th>
-                                        <th>Allowed Types</th>
-                                        <th>Durations</th>
-                                        <th>Max Devices</th>
-                                        <th>Partnership</th>
-                                        <th>Limit</th>
-                                        <th>Used</th>
-                                        <th>Remaining</th>
-                                        <th>Status</th>
-                                        <th>Created</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {clients.map(c => {
-                                        const remaining = c.remainingLicenses ?? 0;
-                                        const plans = (Array.isArray(c.allowedPlans) && c.allowedPlans.length ? c.allowedPlans : ALL_PLANS).filter(p => ALL_PLANS.includes(p));
-                                        return (
-                                            <tr key={c.id}>
-                                                <td>
-                                                    <div className="bold" style={{ cursor: 'pointer', color: '#a78bfa', textDecoration: 'underline', textDecorationStyle: 'dotted' }} onClick={() => viewLicenses(c)}>
-                                                        {c.name}
+                        <div className="wl-grid">
+                            {visibleClients.map((c, i) => {
+                                const remaining = c.remainingLicenses ?? 0;
+                                const limit = c.licenseLimit ?? 0;
+                                const used = c.usedLicenses ?? 0;
+                                const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+                                const quotaColor = remaining <= 0 ? '#ef4444' : remaining <= 5 ? '#f59e0b' : '#22c55e';
+                                const plans = (Array.isArray(c.allowedPlans) && c.allowedPlans.length ? c.allowedPlans : ALL_PLANS).filter(p => ALL_PLANS.includes(p));
+                                const { grad, initials } = avatarFor(c);
+                                const days = c.partnershipEndTs ? Math.ceil((c.partnershipEndTs * 1000 - Date.now()) / 86400000) : null;
+                                return (
+                                    <div className="wl-card db-in" style={{ animationDelay: `${i * 60}ms` }} key={c.id}>
+                                        <div className="wl-card-head">
+                                            <div className="wl-avatar" style={{ background: grad }}>{initials}</div>
+                                            <div className="wl-id">
+                                                <div className="wl-name" title={`View licenses issued by ${c.name}`} onClick={() => viewLicenses(c)}>{c.name}</div>
+                                                <div className="wl-user">@{c.username}</div>
+                                            </div>
+                                            {c.active
+                                                ? <span className="badge badge-active">Active</span>
+                                                : <span className="badge badge-revoked">Disabled</span>}
+                                        </div>
+
+                                        {(c.businessName || c.businessCategory) && (
+                                            <div className="wl-business">{c.businessName || c.businessCategory}</div>
+                                        )}
+
+                                        <div className="wl-quota">
+                                            <div className="wl-quota-top">
+                                                <span>LICENSE QUOTA</span>
+                                                <span>{used} / {limit}</span>
+                                            </div>
+                                            <div className="meter-track">
+                                                <div className="meter-fill" style={{ width: `${pct}%`, background: quotaColor, transition: 'width .6s ease' }} />
+                                            </div>
+                                            <div className="wl-quota-sub" style={{ color: quotaColor }}>{remaining} remaining</div>
+                                        </div>
+
+                                        <div className="wl-chips">
+                                            {(c.allowedModes || []).map(m => <ModeBadge key={m} mode={m} />)}
+                                            {plans.map(p => <PlanBadge key={p} plan={p} />)}
+                                            <span className="wl-chip-devices">{c.maxDevices ?? 255} devices/key</span>
+                                        </div>
+
+                                        <div className="wl-meta">
+                                            <div className="wl-meta-row" style={{ color: days == null ? '#4a5980' : days <= 0 ? '#ef4444' : days <= 30 ? '#f59e0b' : undefined }}>
+                                                ⏳ {days == null ? 'Unlimited partnership' : days > 0 ? `${days} day${days !== 1 ? 's' : ''} of partnership left` : 'Partnership expired'}
+                                            </div>
+                                            <div className="wl-meta-row">
+                                                👤 {c.phone || c.email || '—'}
+                                            </div>
+                                        </div>
+
+                                        <div className="wl-card-foot">
+                                            <span className="wl-created">Since {fmtDate(c.createdAt)}</span>
+                                            {delState?.id === c.id ? (
+                                                delState.step === 1 ? (
+                                                    <div className="wl-actions">
+                                                        <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 600 }}>Delete forever?</span>
+                                                        <button className="btn btn-ghost btn-sm" style={{ color: '#ef4444', borderColor: 'rgba(239,68,68,.3)' }}
+                                                            onClick={() => setDelState({ id: c.id, name: c.name, step: 2 })}>Yes</button>
+                                                        <button className="btn btn-ghost btn-sm" onClick={() => setDelState(null)}>No</button>
                                                     </div>
-                                                    <div className="dim">@{c.username}</div>
-                                                </td>
-                                                <td>
-                                                    {c.phone && <div style={{ fontSize: 12 }}>{c.phone}</div>}
-                                                    {c.email && <div className="dim">{c.email}</div>}
-                                                    {!c.phone && !c.email && <span className="dim">—</span>}
-                                                </td>
-                                                <td>
-                                                    <div style={{ fontSize: 12 }}>{c.businessName || '—'}</div>
-                                                    {c.businessCategory && <div className="dim">{c.businessCategory}</div>}
-                                                </td>
-                                                <td>
-                                                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                                                        {(c.allowedModes || []).map(m => <ModeBadge key={m} mode={m} />)}
+                                                ) : (
+                                                    <div className="wl-actions">
+                                                        <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>Issued licenses stay!</span>
+                                                        <button className="btn btn-ghost btn-sm" style={{ color: '#ef4444', borderColor: 'rgba(239,68,68,.3)' }}
+                                                            onClick={deleteClient} disabled={delBusy}>{delBusy ? '…' : 'Confirm'}</button>
+                                                        <button className="btn btn-ghost btn-sm" onClick={() => setDelState(null)} disabled={delBusy}>Cancel</button>
                                                     </div>
-                                                </td>
-                                                <td>
-                                                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                                                        {plans.map(p => <PlanBadge key={p} plan={p} />)}
-                                                    </div>
-                                                </td>
-                                                <td style={{ fontWeight: 700, color: '#e2e8f0' }}>{c.maxDevices ?? 255}</td>
-                                                <td><PartnershipCell c={c} /></td>
-                                                <td style={{ fontWeight: 700, color: '#e2e8f0' }}>{c.licenseLimit}</td>
-                                                <td>{c.usedLicenses}</td>
-                                                <td>
-                                                    <span style={{
-                                                        fontWeight: 700,
-                                                        color: remaining <= 0 ? '#ef4444' : remaining <= 5 ? '#f59e0b' : '#22c55e',
-                                                    }}>
-                                                        {remaining}
-                                                    </span>
-                                                </td>
-                                                <td>
-                                                    {c.active
-                                                        ? <span className="badge badge-active">Active</span>
-                                                        : <span className="badge badge-revoked">Disabled</span>}
-                                                </td>
-                                                <td>{fmtDate(c.createdAt)}</td>
-                                                <td>
-                                                    {delState?.id === c.id ? (
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                                            {delState.step === 1 ? (
-                                                                <>
-                                                                    <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 600 }}>Sure?</span>
-                                                                    <button className="btn btn-ghost btn-sm" style={{ color: '#ef4444', borderColor: 'rgba(239,68,68,.3)' }}
-                                                                        onClick={() => setDelState({ id: c.id, name: c.name, step: 2 })}>Yes</button>
-                                                                    <button className="btn btn-ghost btn-sm" onClick={() => setDelState(null)}>No</button>
-                                                                </>
-                                                            ) : (
-                                                                <>
-                                                                    <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>Permanent!</span>
-                                                                    <button className="btn btn-ghost btn-sm" style={{ color: '#ef4444', borderColor: 'rgba(239,68,68,.3)' }}
-                                                                        onClick={deleteClient} disabled={delBusy}>{delBusy ? '…' : 'Confirm'}</button>
-                                                                    <button className="btn btn-ghost btn-sm" onClick={() => setDelState(null)} disabled={delBusy}>Cancel</button>
-                                                                </>
-                                                            )}
-                                                        </div>
-                                                    ) : (
-                                                        <div style={{ display: 'flex', gap: 6 }}>
-                                                            <button className="btn btn-ghost btn-sm" onClick={() => viewLicenses(c)} title="View licenses">📋</button>
-                                                            <button className="btn btn-ghost btn-sm" onClick={() => openEdit(c)} title="Edit details, types, durations & limits">✎</button>
-                                                            <button className="btn btn-ghost btn-sm" onClick={() => { setPwTarget(c); setNewPw(''); setPwErr(''); }} title="Reset password">🔑</button>
-                                                            <button
-                                                                className="btn btn-danger btn-sm"
-                                                                onClick={() => toggleActive(c)}
-                                                            >
-                                                                {c.active ? 'Disable' : 'Enable'}
-                                                            </button>
-                                                            <button
-                                                                className="btn btn-danger btn-sm"
-                                                                onClick={() => setDelState({ id: c.id, name: c.name, step: 1 })}
-                                                                title="Delete permanently — issued licenses stay in records"
-                                                            >
-                                                                🗑
-                                                            </button>
-                                                        </div>
-                                                    )}
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
+                                                )
+                                            ) : (
+                                                <div className="wl-actions">
+                                                    <button className="btn btn-ghost btn-sm" onClick={() => viewLicenses(c)} title="View & manage licenses">📋 Licenses</button>
+                                                    <button className="btn btn-ghost btn-sm" onClick={() => openEdit(c)} title="Edit details, types, durations & limits">✎</button>
+                                                    <button className="btn btn-ghost btn-sm" onClick={() => { setPwTarget(c); setNewPw(''); setPwErr(''); }} title="Reset password">🔑</button>
+                                                    <button className="btn btn-ghost btn-sm" onClick={() => toggleActive(c)} title={c.active ? 'Disable this client' : 'Enable this client'}
+                                                        style={{ color: c.active ? '#f59e0b' : '#22c55e' }}>
+                                                        {c.active ? '⏸' : '▶'}
+                                                    </button>
+                                                    <button className="btn btn-ghost btn-sm" onClick={() => setDelState({ id: c.id, name: c.name, step: 1 })}
+                                                        title="Delete permanently — issued licenses stay in records" style={{ color: '#ef4444' }}>🗑</button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
                         </div>
                     )}
                 </div>
@@ -818,68 +912,138 @@ export default function WhitelabelPage() {
                 </Modal>
             )}
 
-            {/* ── Client Licenses Modal ────────────────────────────────── */}
+            {/* ── Client Licenses Modal (view + select + revoke + delete) ── */}
             {viewTarget && (
-                <Modal title={`Licenses issued by ${viewTarget.name}`} onClose={() => setViewTarget(null)} maxWidth={900}>
+                <Modal title={`Licenses issued by ${viewTarget.name}`} onClose={closeView} maxWidth={980}>
                         <div className="modal-body">
                             {viewData ? (
                                 <>
-                                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
-                                        <div style={{ background: '#161c2d', border: '1px solid #252d42', borderRadius: 8, padding: '8px 16px' }}>
-                                            <div style={{ fontSize: 10.5, color: '#4a5980', fontWeight: 600 }}>QUOTA USED</div>
-                                            <div style={{ fontSize: 18, fontWeight: 800, color: '#a78bfa' }}>
+                                    <div className="wl-usage-row">
+                                        <div className="wl-usage-card">
+                                            <div className="wl-usage-label">QUOTA USED</div>
+                                            <div className="wl-usage-value" style={{ color: '#a78bfa' }}>
                                                 {viewData.usage.used} / {viewData.usage.limit}
                                             </div>
                                         </div>
-                                        <div style={{ background: '#161c2d', border: '1px solid #252d42', borderRadius: 8, padding: '8px 16px' }}>
-                                            <div style={{ fontSize: 10.5, color: '#4a5980', fontWeight: 600 }}>REMAINING</div>
-                                            <div style={{ fontSize: 18, fontWeight: 800, color: viewData.usage.remaining > 0 ? '#22c55e' : '#ef4444' }}>
+                                        <div className="wl-usage-card">
+                                            <div className="wl-usage-label">REMAINING</div>
+                                            <div className="wl-usage-value" style={{ color: viewData.usage.remaining > 0 ? '#22c55e' : '#ef4444' }}>
                                                 {viewData.usage.remaining}
                                             </div>
                                         </div>
-                                        <div style={{ background: '#161c2d', border: '1px solid #252d42', borderRadius: 8, padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 6 }}>
-                                            {(viewData.whitelabel.allowedModes || []).map(m => <ModeBadge key={m} mode={m} />)}
+                                        <div className="wl-usage-card">
+                                            <div className="wl-usage-label">TOTAL ISSUED</div>
+                                            <div className="wl-usage-value" style={{ color: '#4a9eff' }}>
+                                                {viewData.licenses.length}
+                                            </div>
+                                        </div>
+                                        <div className="wl-usage-card">
+                                            <div className="wl-usage-label">REVOKED</div>
+                                            <div className="wl-usage-value" style={{ color: '#f59e0b' }}>
+                                                {viewData.licenses.filter(l => l.revoked).length}
+                                            </div>
                                         </div>
                                     </div>
+
+                                    {/* Bulk toolbar */}
+                                    {viewData.licenses.length > 0 && (
+                                        bulkMode ? (
+                                            <div className="wl-bulk wl-bulk-confirm">
+                                                {bulkMode === 'revoke' ? (
+                                                    <>
+                                                        <span style={{ fontSize: 12.5, fontWeight: 700, color: '#f59e0b' }}>
+                                                            Revoke {sel.size} license{sel.size !== 1 ? 's' : ''}?
+                                                        </span>
+                                                        <input
+                                                            className="form-input"
+                                                            style={{ flex: 1, minWidth: 140 }}
+                                                            placeholder="Reason (optional) — shown in logs"
+                                                            value={bulkReason}
+                                                            onChange={e => setBulkReason(e.target.value)}
+                                                            autoFocus
+                                                        />
+                                                    </>
+                                                ) : (
+                                                    <span style={{ fontSize: 12.5, fontWeight: 700, color: '#ef4444' }}>
+                                                        Permanently delete {sel.size} license{sel.size !== 1 ? 's' : ''}? Customers losing access cannot be undone.
+                                                    </span>
+                                                )}
+                                                <button className="btn btn-ghost btn-sm" onClick={() => { setBulkMode(null); setSel(new Set()); }} disabled={bulkBusy}>Cancel</button>
+                                                <button
+                                                    className={`btn btn-sm ${bulkMode === 'revoke' ? 'btn-primary' : 'btn-danger'}`}
+                                                    onClick={runBulk}
+                                                    disabled={bulkBusy || sel.size === 0}
+                                                >
+                                                    {bulkBusy ? 'Working…' : bulkMode === 'revoke' ? 'Confirm Revoke' : 'Confirm Delete'}
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div className="wl-bulk">
+                                                <label className="wl-check-all">
+                                                    <input type="checkbox" className="wl-check" checked={allSelected} onChange={toggleAll} />
+                                                    Select all
+                                                </label>
+                                                <span className="wl-bulk-count">
+                                                    {sel.size} selected
+                                                </span>
+                                                <button className="btn btn-ghost btn-sm" disabled={sel.size === 0} onClick={() => setBulkMode('revoke')}>
+                                                    ⏸ Revoke Selected
+                                                </button>
+                                                <button className="btn btn-ghost btn-sm" style={{ color: '#ef4444', borderColor: 'rgba(239,68,68,.3)' }} disabled={sel.size === 0} onClick={() => setBulkMode('delete')}>
+                                                    🗑 Delete Selected
+                                                </button>
+                                            </div>
+                                        )
+                                    )}
+
                                     {viewData.licenses.length === 0 ? (
-                                        <div className="empty">This client hasn't generated any licenses yet.</div>
+                                        <div className="empty">This client hasn't issued any licenses yet.</div>
                                     ) : (
                                         <div className="table-wrap">
                                             <table>
                                                 <thead>
                                                     <tr>
-                                                        <th>#</th>
+                                                        <th style={{ width: 34 }}><input type="checkbox" className="wl-check" checked={allSelected} onChange={toggleAll} title="Select all" /></th>
                                                         <th>Client</th>
                                                         <th>Key</th>
                                                         <th>Type</th>
-                                                        <th>Plan</th>
-                                                        <th>Price</th>
-                                                        <th>Status</th>
+                                                        <th>Duration</th>
+                                                        <th>Devices</th>
                                                         <th>Issued</th>
+                                                        <th>Status</th>
+                                                        <th></th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
-                                                    {viewData.licenses.map((l, i) => {
-                                                        const expired = !l.isLifetime && (l.expiryTs || 0) <= Math.floor(Date.now() / 1000);
+                                                    {viewData.licenses.map(l => {
+                                                        const expired = !l.isLifetime && l.expiryTs <= Math.floor(Date.now() / 1000);
+                                                        const status = l.revoked ? { label: 'Revoked', cls: 'badge-revoked' }
+                                                            : expired ? { label: 'Expired', cls: 'badge-expired' }
+                                                            : { label: 'Active', cls: 'badge-active' };
                                                         return (
-                                                            <tr key={l.key}>
-                                                                <td style={{ color: '#3a4560', fontSize: 12 }}>{i + 1}</td>
+                                                            <tr key={l.key} className={sel.has(l.key) ? 'wl-row-sel' : ''}>
+                                                                <td><input type="checkbox" className="wl-check" checked={sel.has(l.key)} onChange={() => toggleSel(l.key)} /></td>
+                                                                <td style={{ fontSize: 12 }}>{l.clientName || '—'}</td>
                                                                 <td>
-                                                                    <div className="bold">{l.clientName}</div>
-                                                                    {l.clientPhone && <div className="dim">{l.clientPhone}</div>}
+                                                                    <button className="key-copy" title="Click to copy" onClick={() => { navigator.clipboard?.writeText(l.key); toast.success('Key copied'); }}>
+                                                                        {l.key.slice(0, 14)}…
+                                                                    </button>
                                                                 </td>
-                                                                <td><span className="mono" style={{ fontSize: 10 }}>{l.key}</span></td>
-                                                                <td><ModeBadge mode={l.licenseMode || 'desktop'} /></td>
-                                                                <td><span className={`badge badge-plan-${l.plan}`}>{l.plan}</span></td>
-                                                                <td style={{ fontWeight: 700, color: (l.discountedPrice ?? l.price) > 0 ? '#22c55e' : '#3a4560' }}>
-                                                                    {(l.discountedPrice ?? l.price) > 0 ? `₹${l.discountedPrice ?? l.price}` : '—'}
-                                                                </td>
-                                                                <td>
-                                                                    {l.revoked   && <span className="badge badge-revoked">Revoked</span>}
-                                                                    {!l.revoked && expired && <span className="badge badge-expired">Expired</span>}
-                                                                    {!l.revoked && !expired && <span className="badge badge-active">Active</span>}
-                                                                </td>
+                                                                <td><ModeBadge mode={l.licenseMode} /></td>
+                                                                <td>{planLabel(l.plan, l.customDays)}</td>
+                                                                <td>{l.deviceLimit}</td>
                                                                 <td>{fmtDate(l.issuedAt)}</td>
+                                                                <td><span className={`badge ${status.cls}`}>{status.label}</span></td>
+                                                                <td>
+                                                                    <div style={{ display: 'flex', gap: 6 }}>
+                                                                        {!l.revoked && (
+                                                                            <button className="btn btn-ghost btn-sm" title="Revoke this license"
+                                                                                onClick={() => rowAction(l, 'revoke')}>⏸</button>
+                                                                        )}
+                                                                        <button className="btn btn-ghost btn-sm" style={{ color: '#ef4444' }} title="Delete this license"
+                                                                            onClick={() => rowAction(l, 'delete')}>🗑</button>
+                                                                    </div>
+                                                                </td>
                                                             </tr>
                                                         );
                                                     })}
@@ -895,8 +1059,8 @@ export default function WhitelabelPage() {
                             )}
                         </div>
                         <div className="modal-footer">
-                            <button className="btn btn-ghost" onClick={() => setViewTarget(null)}>Close</button>
-                            <button className="btn btn-primary" onClick={() => { setViewTarget(null); openEdit(viewTarget); }}>✎ Edit Client</button>
+                            <button className="btn btn-ghost" onClick={closeView}>Close</button>
+                            <button className="btn btn-primary" onClick={() => { closeView(); openEdit(viewTarget); }}>✎ Edit Client</button>
                         </div>
                 </Modal>
             )}
