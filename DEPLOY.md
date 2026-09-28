@@ -95,6 +95,11 @@ Call this in your `/api/license/activate` and `/api/license/status` handlers. If
 |---|---|
 | **super** | Everything: create admins, see all licenses, revoke any license |
 | **admin** | Generate keys for their own clients, see only their own licenses, revoke their own keys |
+| **whitelabel** | Reseller account created by a super admin: logs into this same panel, generates only the license types (desktop / cloud / app) and up to the total license limit the super admin assigns. Limits and allowed types can be changed any time and apply to the reseller's session live. |
+
+### Whitelabel clients
+
+Manage them under **Whitelabel** (super admin only). Each client stores name, phone, email, business details and notes, gets their own username/password for this panel, and can be limited per license type and total number of licenses. Deactivate a client to instantly block generation with their existing session. Licenses they issue are marked and excluded from your direct Sales/Stats revenue; view them via the Whitelabel table or the Licenses page.
 
 ---
 

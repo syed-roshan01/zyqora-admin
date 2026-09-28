@@ -11,6 +11,10 @@ export async function GET(req) {
     const { error, status, session } = await requireAuth(req);
     if (error) return NextResponse.json({ error }, { status });
 
+    // Expenses are internal staff bookkeeping — super and admin only
+    if (session.role !== 'super' && session.role !== 'admin')
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+
     const list = session.role === 'super'
         ? await listAllExpenses()
         : await listAdminExpenses(session.sub);
@@ -40,6 +44,10 @@ export async function GET(req) {
 export async function POST(req) {
     const { error, status, session } = await requireAuth(req);
     if (error) return NextResponse.json({ error }, { status });
+
+    // Expenses are internal staff bookkeeping — super and admin only
+    if (session.role !== 'super' && session.role !== 'admin')
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
     const body = await req.json();
     const title = (body?.title || '').trim();
@@ -76,6 +84,10 @@ export async function POST(req) {
 export async function PATCH(req) {
     const { error, status, session } = await requireAuth(req);
     if (error) return NextResponse.json({ error }, { status });
+
+    // Expenses are internal staff bookkeeping — super and admin only
+    if (session.role !== 'super' && session.role !== 'admin')
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
     const body = await req.json();
     const id = (body?.id || '').trim();

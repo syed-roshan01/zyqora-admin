@@ -12,6 +12,11 @@ export async function POST(req) {
     const license = await getLicense(key.trim().toUpperCase());
     if (!license) return NextResponse.json({ error: 'License not found' }, { status: 404 });
 
+    // Admins and whitelabel resellers can only edit licenses they issued —
+    // same rule the revoke and convert endpoints already enforce.
+    if (session.role !== 'super' && license.issuedBy !== session.sub)
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+
     const canSetValidationException = session.role === 'super' && validationException !== undefined;
     const nextValidationException = canSetValidationException ? !!validationException : license.validationException;
 

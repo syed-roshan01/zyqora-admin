@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import AppLayout from '@/components/AppLayout';
 import { apiFetch } from '@/lib/apiFetch';
 
@@ -15,6 +16,7 @@ function getDaysLeft(lic) {
 }
 
 export default function DashboardPage() {
+    const router = useRouter();
     const [licenses, setLicenses] = useState([]);
     const [admins,   setAdmins]   = useState([]);
     const [sales,    setSales]    = useState([]);
@@ -31,7 +33,12 @@ export default function DashboardPage() {
 
     useEffect(() => {
         const cached = localStorage.getItem('zyqora_admin_user');
-        if (cached) try { setUser(JSON.parse(cached)); } catch {}
+        if (cached) try {
+            const u = JSON.parse(cached);
+            setUser(u);
+            // Whitelabel resellers only have the Licenses module
+            if (u?.role === 'whitelabel') { router.replace('/licenses'); return; }
+        } catch {}
 
         const loadData = async () => {
             const [lRes, aRes, sRes, eRes, affRes, wRes, apRes, statsRes] = await Promise.all([

@@ -10,9 +10,11 @@ export async function GET(req) {
         ? await listAllLicenses()
         : await listAdminLicenses(session.sub);
 
-    // Only include licenses that have a price recorded
+    // Only include licenses that have a price recorded. Whitelabel-issued
+    // licenses are the reseller's own business, so they stay out of this
+    // panel's direct-sales view.
     const sales = list
-        .filter(l => l.price > 0)
+        .filter(l => l.price > 0 && l.whitelabelIssued !== true)
         .map(l => ({
             key:                      l.key,
             clientName:               l.clientName,

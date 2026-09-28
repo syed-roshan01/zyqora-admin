@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth';
-import { saveLicense, getAffiliate } from '@/lib/kv';
+import { saveLicense, getAffiliate, getWhitelabel, countIssuedLicenses } from '@/lib/kv';
 import { saveLog } from '@/lib/logs';
 import { generateKey, planToExpiry, LICENSE_MODES } from '@/lib/license';
 
@@ -19,6 +19,24 @@ export async function POST(req) {
     // device's ID and requires it up front.
     if (!LICENSE_MODES.includes(licenseMode) || (licenseMode !== 'cloud' && !machineId?.trim()) || !plan || !clientName?.trim())
         return NextResponse.json({ error: 'clientName, license mode and plan are required' }, { status: 400 });
+
+    // Whitelabel resellers: enforce the live allow-list of license types and
+    // the issue quota against their current record, so super-admin changes
+    // apply immediately. No affiliate attribution or reviewer keys either.
+    let whitelabel = null;
+    if (session.role === 'whitelabel') {
+        whitelabel = await getWhitelabel(session.sub);
+        if (!whitelabel || !whitelabel.active)
+            return NextResponse.json({ error: 'Whitelabel account is inactive' }, { status: 403 });
+        const allowed = Array.isArray(whitelabel.allowedModes) ? whitelabel.allowedModes : [];
+        if (!allowed.includes(licenseMode))
+            return NextResponse.json({ error: `License type "${licenseMode}" is not allowed for this account` }, { status: 403 });
+        if (affiliateId)
+            return NextResponse.json({ error: 'Affiliate attribution is not available for whitelabel accounts' }, { status: 403 });
+        const used = await countIssuedLicenses(session.sub);
+        if (used >= (whitelabel.licenseLimit || 0))
+            return NextResponse.json({ error: `License limit reached (${used}/${whitelabel.licenseLimit || 0}). Contact the administrator to raise your limit.` }, { status: 403 });
+    }
 
     const dl       = Math.max(1, Math.min(255, parseInt(deviceLimit) || 1));
     const expiryTs = planToExpiry(plan, customDays);
@@ -58,8 +76,12 @@ export async function POST(req) {
         // super admins server-side too — the UI already hides the checkbox from regular
         // admins, but that alone wouldn't stop someone calling this API directly.
         reviewAccess: reviewAccess === true && session.role === 'super',
+        // Whitelabel marker — lets sales/stats exclude reseller-issued licenses
+        // from direct revenue while the licenses page still shows them.
+        whitelabelIssued: whitelabel ? true : undefined,
+        whitelabelName:   whitelabel ? (whitelabel.name || whitelabel.username) : null,
         issuedBy:     session.sub,
-        issuedByName: session.username,
+        issuedByName: whitelabel ? (whitelabel.name || session.username) : session.username,
         issuedAt:     Math.floor(Date.now() / 1000),
         activated:    false,
         activatedAt:  null,

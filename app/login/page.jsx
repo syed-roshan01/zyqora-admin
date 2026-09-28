@@ -25,6 +25,8 @@ export default function LoginPage() {
             localStorage.setItem('zyqora_admin_user', JSON.stringify({ username: data.username, role: data.role, name: data.name || null }));
             if (data.role === 'affiliate') {
                 router.replace('/affiliate-dashboard');
+            } else if (data.role === 'whitelabel') {
+                router.replace('/licenses');
             } else {
                 router.replace('/dashboard');
             }

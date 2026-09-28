@@ -6,6 +6,10 @@ export async function GET(req) {
     const { error, status, session } = await requireAuth(req);
     if (error) return NextResponse.json({ error }, { status });
 
+    // Owner/staff bookkeeping — super and admin only
+    if (session.role !== 'super' && session.role !== 'admin')
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+
     const list = session.role === 'super'
         ? await listAllWithdrawals()
         : await listAdminWithdrawals(session.sub);

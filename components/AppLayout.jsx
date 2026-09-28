@@ -10,6 +10,7 @@ const ALL_NAV = [
     { href: '/sales',      icon: '₹',  label: 'Sales'     },
     { href: '/expenses',   icon: '₹-', label: 'Expenses'  },
     { href: '/admins',       icon: '⊛',  label: 'Admins',         superOnly: true },
+    { href: '/whitelabel',   icon: '◇',  label: 'Whitelabel',     superOnly: true },
     { href: '/affiliates',   icon: '◎',  label: 'Affiliates'                   },
     { href: '/payments',     icon: '⊕',  label: 'Payments'                     },
     { href: '/withdrawals',  icon: '↑',  label: 'Withdrawals'                      },
@@ -50,7 +51,12 @@ export default function AppLayout({ children }) {
         );
     }
 
-    const nav = ALL_NAV.filter(n => !n.superOnly || user?.role === 'super');
+    // Whitelabel resellers only get the Licenses module; super sees
+    // everything; regular admins see everything except super-only items.
+    const nav = ALL_NAV.filter(n => {
+        if (user?.role === 'whitelabel') return n.href === '/licenses';
+        return !n.superOnly || user?.role === 'super';
+    });
 
     return (
         <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: '#0a0d14' }}>
@@ -75,12 +81,12 @@ export default function AppLayout({ children }) {
                 </nav>
 
                 <div className="sidebar-footer">
-                    <div className="sidebar-user-name">{user?.username}</div>
+                    <div className="sidebar-user-name">{user?.name || user?.username}</div>
                     <div
                         className="sidebar-user-role"
-                        style={{ color: user?.role === 'super' ? '#a78bfa' : '#4a9eff' }}
+                        style={{ color: user?.role === 'super' ? '#a78bfa' : user?.role === 'whitelabel' ? '#2dd4bf' : '#4a9eff' }}
                     >
-                        {user?.role}
+                        {user?.role === 'whitelabel' ? 'Whitelabel' : user?.role}
                     </div>
                     <button className="btn btn-danger btn-sm" onClick={logout} style={{ width: '100%' }}>
                         Sign Out

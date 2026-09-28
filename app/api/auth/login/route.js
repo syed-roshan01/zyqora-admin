@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
 import { signToken } from '@/lib/auth';
-import { getAdminByUsername, saveAdmin, listAdmins, getAffiliateByUsername } from '@/lib/kv';
+import { getAdminByUsername, saveAdmin, listAdmins, getAffiliateByUsername, getWhitelabelByUsername } from '@/lib/kv';
 
 // Lazy-seed: creates super admin from env vars if no admins exist yet
 async function ensureSuperAdmin() {
@@ -32,13 +32,19 @@ export async function POST(req) {
 
         await ensureSuperAdmin();
 
-        // Try admin first, then affiliate
+        // Try admin first, then affiliate, then whitelabel client
         let account = await getAdminByUsername(username);
         let isAffiliate = false;
+        let isWhitelabel = false;
 
         if (!account) {
             account = await getAffiliateByUsername(username);
             isAffiliate = !!account;
+        }
+
+        if (!account) {
+            account = await getWhitelabelByUsername(username);
+            isWhitelabel = !!account;
         }
 
         if (!account || !account.active)
@@ -48,7 +54,7 @@ export async function POST(req) {
         if (!valid)
             return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
 
-        const role = isAffiliate ? 'affiliate' : account.role;
+        const role = isAffiliate ? 'affiliate' : isWhitelabel ? 'whitelabel' : account.role;
         const token = await signToken({ sub: account.id, username: account.username, role });
         return NextResponse.json({ token, username: account.username, role, name: account.name || null });
     } catch (err) {

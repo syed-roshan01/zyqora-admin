@@ -10,7 +10,7 @@ export default function RootPage() {
         try {
             const raw = localStorage.getItem('zyqora_admin_user');
             const u = raw ? JSON.parse(raw) : null;
-            router.replace(u?.role === 'affiliate' ? '/affiliate-dashboard' : '/dashboard');
+            router.replace(u?.role === 'affiliate' ? '/affiliate-dashboard' : u?.role === 'whitelabel' ? '/licenses' : '/dashboard');
         } catch {
             router.replace('/dashboard');
         }

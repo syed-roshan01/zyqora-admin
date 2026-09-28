@@ -10,7 +10,8 @@ import { listAllLicenses, listAllExpenses, listAffiliates, listAllWithdrawals } 
 export async function GET(req) {
     const { error, status, session } = await requireAuth(req);
     if (error) return NextResponse.json({ error }, { status });
-    if (session.role === 'affiliate') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    if (session.role !== 'super' && session.role !== 'admin')
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
     const [licenses, expenses, affiliates, withdrawals] = await Promise.all([
         listAllLicenses(),
@@ -19,7 +20,9 @@ export async function GET(req) {
         listAllWithdrawals(),
     ]);
 
-    const paidSales = licenses.filter(l => !l.revoked && l.price > 0);
+    // Direct sales only — licenses issued by whitelabel resellers are their
+    // own business, not direct revenue for this panel's owner.
+    const paidSales = licenses.filter(l => !l.revoked && l.price > 0 && l.whitelabelIssued !== true);
     const totalRevenue = paidSales.reduce((s, l) => s + Number(l.price), 0);
     const totalExpenses = expenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
 

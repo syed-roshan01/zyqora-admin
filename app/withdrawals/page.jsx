@@ -65,6 +65,7 @@ export default function WithdrawalsPage() {
             try {
                 const u = JSON.parse(cached);
                 if (u.role === 'affiliate') { router.replace('/affiliate-dashboard'); return; }
+                if (u.role === 'whitelabel') { router.replace('/licenses'); return; }
                 setUser(u);
             } catch {}
         }

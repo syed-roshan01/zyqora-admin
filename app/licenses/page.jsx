@@ -38,6 +38,13 @@ const DEFAULT_FORM = {
     reviewAccess: false,
 };
 
+// Whitelabel resellers — label + color for each allowed license type
+const WL_MODE_META = {
+    desktop: { label: 'PC / Desktop', background: 'rgba(139,146,176,.15)', color: '#8b93b0' },
+    cloud:   { label: 'Cloud',        background: 'rgba(37,211,102,.15)',  color: '#25D366' },
+    app:     { label: 'Android App',  background: 'rgba(74,158,255,.15)',  color: '#4a9eff' },
+};
+
 function fmtDate(ts) {
     if (!ts) return '—';
     return new Date(ts * 1000).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -143,6 +150,8 @@ export default function LicensesPage() {
     const [exportFormat, setExportFormat] = useState('csv');
     const [exportBusy, setExportBusy] = useState(false);
     const [affiliates, setAffiliates] = useState([]);
+    // Live whitelabel record (allowed types + quota) for reseller accounts
+    const [wlInfo, setWlInfo] = useState(null);
 
     // Convert trial → paid
     const [showConvert, setShowConvert] = useState(null); // original license object
@@ -160,10 +169,49 @@ export default function LicensesPage() {
     };
 
     useEffect(() => {
-        try { const u = localStorage.getItem('zyqora_admin_user'); if (u) setUser(JSON.parse(u)); } catch {}
+        let u = null;
+        try { const raw = localStorage.getItem('zyqora_admin_user'); if (raw) u = JSON.parse(raw); } catch {}
+        setUser(u);
         load();
-        apiFetch('/api/affiliates/list').then(r => { if (r?.ok) setAffiliates(r.data || []); });
+        // Whitelabel resellers have no affiliates module
+        if (u?.role !== 'whitelabel') {
+            apiFetch('/api/affiliates/list').then(r => { if (r?.ok) setAffiliates(r.data || []); });
+        }
     }, []);
+
+    // Whitelabel resellers: keep quota + allowed license types LIVE. The super
+    // admin can change them at any moment; polling /api/auth/me every 10s
+    // reflects those changes here without the client re-logging in, and the
+    // server enforces the live record on every generate call regardless.
+    const refreshWhitelabel = async () => {
+        const r = await apiFetch('/api/auth/me');
+        if (r?.ok) setWlInfo(r.data);
+    };
+
+    useEffect(() => {
+        if (user?.role !== 'whitelabel') return;
+        let stopped = false;
+        const poll = async () => {
+            const r = await apiFetch('/api/auth/me');
+            if (!stopped && r?.ok) setWlInfo(r.data);
+        };
+        poll();
+        const t = setInterval(poll, 10000);
+        return () => { stopped = true; clearInterval(t); };
+    }, [user?.role]);
+
+    // Keep the generate form's license type inside the live allow-list
+    useEffect(() => {
+        if (user?.role !== 'whitelabel' || !wlInfo) return;
+        const allowed = Array.isArray(wlInfo.allowedModes) ? wlInfo.allowedModes : [];
+        if (allowed.length && !allowed.includes(form.licenseMode)) {
+            setForm(f => ({ ...f, licenseMode: allowed[0], machineId: allowed[0] === 'cloud' ? '' : f.machineId }));
+        }
+    }, [user?.role, wlInfo, form.licenseMode]);
+
+    const wlAllowedModes = user?.role === 'whitelabel'
+        ? (wlInfo?.allowedModes || [])
+        : null;
 
     const filtered = licenses.filter(l => {
         if (l.revoked && l.revokedReason?.startsWith('Converted to')) return false;
@@ -200,6 +248,7 @@ export default function LicensesPage() {
         setGeneratedLicense(r.data.license || null);
         setGenBusy(false);
         load();
+        if (user?.role === 'whitelabel') refreshWhitelabel();
     };
 
     const downloadInvoiceForLicense = async (license) => {
@@ -618,6 +667,38 @@ export default function LicensesPage() {
                 </div>
 
                 <div className="page-body">
+                    {/* Whitelabel quota card — live values from the super admin's settings */}
+                    {user?.role === 'whitelabel' && wlInfo && (
+                        <div className="card" style={{ marginBottom: 16, display: 'flex', flexWrap: 'wrap', gap: 32, alignItems: 'center' }}>
+                            <div>
+                                <div className="stat-label" style={{ marginBottom: 4 }}>LICENSE QUOTA</div>
+                                <div style={{
+                                    fontSize: 24, fontWeight: 800,
+                                    color: (wlInfo.usage?.remaining ?? 0) <= 0 ? '#ef4444' : (wlInfo.usage?.remaining ?? 0) <= 5 ? '#f59e0b' : '#22c55e',
+                                }}>
+                                    {wlInfo.usage?.used ?? 0} / {wlInfo.usage?.limit ?? 0}
+                                </div>
+                                <div className="stat-sub">{wlInfo.usage?.remaining ?? 0} remaining — updates live</div>
+                            </div>
+                            <div>
+                                <div className="stat-label" style={{ marginBottom: 6 }}>ALLOWED LICENSE TYPES</div>
+                                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                    {(wlInfo.allowedModes || []).map(m => (
+                                        <span key={m} className="badge" style={WL_MODE_META[m] || WL_MODE_META.desktop}>
+                                            {(WL_MODE_META[m] || WL_MODE_META.desktop).label}
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                            {!wlInfo.active && (
+                                <div style={{ color: '#ef4444', fontWeight: 700, fontSize: 13 }}>Account disabled — contact the administrator</div>
+                            )}
+                            <div style={{ marginLeft: 'auto', textAlign: 'right', fontSize: 12, color: '#4a5980' }}>
+                                {wlInfo.name}<br />@{wlInfo.username}
+                            </div>
+                        </div>
+                    )}
+
                     {/* Search */}
                     <div className="search-bar" style={{ marginBottom: 16 }}>
                         <input
@@ -848,10 +929,19 @@ export default function LicensesPage() {
                                         <label className="form-label">License Type *</label>
                                         <select className="form-select" value={form.licenseMode}
                                             onChange={e => setForm(f => ({ ...f, licenseMode: e.target.value, machineId: e.target.value === 'cloud' ? '' : f.machineId }))}>
-                                            <option value="desktop">Desktop License (Machine ID)</option>
-                                            <option value="app">App License (Android ID)</option>
-                                            <option value="cloud">Cloud License (No Machine ID)</option>
+                                            {[
+                                                { value: 'desktop', label: 'Desktop License (Machine ID)' },
+                                                { value: 'app',     label: 'App License (Android ID)' },
+                                                { value: 'cloud',   label: 'Cloud License (No Machine ID)' },
+                                            ]
+                                                .filter(o => user?.role !== 'whitelabel' || wlAllowedModes.includes(o.value))
+                                                .map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                                         </select>
+                                        {user?.role === 'whitelabel' && wlAllowedModes.length === 0 && (
+                                            <span style={{ fontSize: 11, color: '#ef4444' }}>
+                                                No license types are currently allowed on your account — contact the administrator.
+                                            </span>
+                                        )}
                                     </div>
                                     {form.licenseMode === 'desktop' && <div className="form-group">
                                         <label className="form-label">Machine ID *</label>
@@ -929,7 +1019,7 @@ export default function LicensesPage() {
                                         </div>
                                     </div>
                                     {/* Affiliate */}
-                                    {affiliates.length > 0 && (
+                                    {user?.role !== 'whitelabel' && affiliates.length > 0 && (
                                         <div className="form-group">
                                             <label className="form-label">Referred by Affiliate</label>
                                             <select className="form-select" value={form.affiliateId}
@@ -965,11 +1055,20 @@ export default function LicensesPage() {
                                             ↺ Select all
                                         </button>
                                     </div>
+                                    {user?.role === 'whitelabel' && wlInfo?.usage && (
+                                        <div style={{ fontSize: 12, color: '#94a3b8', background: '#161c2d', border: '1px solid #252d42', borderRadius: 8, padding: '8px 12px' }}>
+                                            Quota:{' '}
+                                            <b style={{ color: wlInfo.usage.remaining > 0 ? '#22c55e' : '#ef4444' }}>
+                                                {wlInfo.usage.used} of {wlInfo.usage.limit} used
+                                            </b>{' '}
+                                            — {wlInfo.usage.remaining} remaining. Allowed types and limits are managed by the administrator and update automatically.
+                                        </div>
+                                    )}
                                     {genErr && <div className="form-error">{genErr}</div>}
                                 </div>
                                 <div className="modal-footer">
                                     <button type="button" className="btn btn-ghost" onClick={() => setShowGen(false)}>Cancel</button>
-                                    <button type="submit" className="btn btn-primary" disabled={genBusy}>
+                                    <button type="submit" className="btn btn-primary" disabled={genBusy || (user?.role === 'whitelabel' && wlInfo?.usage && wlInfo.usage.remaining <= 0)}>
                                         {genBusy ? 'Generating…' : 'Generate Key'}
                                     </button>
                                 </div>
@@ -1198,7 +1297,7 @@ export default function LicensesPage() {
                             <button className="btn btn-ghost" onClick={() => downloadInvoiceForLicense(showDetail)} disabled={invoiceBusy}>
                                 {invoiceBusy ? 'Preparing Invoice…' : 'Download Invoice'}
                             </button>
-                            <button className="btn btn-primary" onClick={() => { setShowEdit(showDetail); setEditForm({ clientName: showDetail.clientName || '', clientPhone: showDetail.clientPhone || '', clientEmail: showDetail.clientEmail || '', price: showDetail.price ?? '', notes: showDetail.notes || '', affiliateId: showDetail.affiliateId || '', affiliateName: showDetail.affiliateName || '', features: { ...DEFAULT_FEATURES, ...(showDetail.features || {}) } }); setEditErr(''); setShowDetail(null); }}>✎ Edit</button>
+                            <button className="btn btn-primary" onClick={() => { setShowEdit(showDetail); setEditForm({ clientName: showDetail.clientName || '', clientPhone: showDetail.clientPhone || '', clientEmail: showDetail.clientEmail || '', businessCategory: showDetail.businessCategory || '', website: showDetail.website || '', price: showDetail.price ?? '', notes: showDetail.notes || '', affiliateId: showDetail.affiliateId || '', affiliateName: showDetail.affiliateName || '', features: { ...DEFAULT_FEATURES, ...(showDetail.features || {}) } }); setEditErr(''); setShowDetail(null); }}>✎ Edit</button>
                         </div>
                     </div>
                 </div>

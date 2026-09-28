@@ -6,8 +6,9 @@ export async function GET(req) {
     const { error, status, session } = await requireAuth(req);
     if (error) return NextResponse.json({ error }, { status });
 
-    // Affiliates themselves cannot call this; only admin/super
-    if (session.role === 'affiliate') {
+    // Affiliates themselves and whitelabel resellers cannot call this;
+    // only admin/super
+    if (session.role !== 'super' && session.role !== 'admin') {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 

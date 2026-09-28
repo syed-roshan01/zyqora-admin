@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth';
-import { getLicense, saveLicense, getAffiliate } from '@/lib/kv';
+import { getLicense, saveLicense, getAffiliate, getWhitelabel, countIssuedLicenses } from '@/lib/kv';
 import { saveLog } from '@/lib/logs';
 import { generateKey, planToExpiry } from '@/lib/license';
 
@@ -20,6 +20,27 @@ export async function POST(req) {
     // Admins can only convert their own licenses
     if (session.role !== 'super' && oldLicense.issuedBy !== session.sub)
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+
+    // Whitelabel resellers: the converted license keeps its original type, so
+    // that type must still be allowed. Quota-wise a conversion is net-neutral
+    // when the old key was counting (it stops counting once revoked as
+    // "Converted to …"), otherwise it consumes one extra slot.
+    let whitelabel = null;
+    if (session.role === 'whitelabel') {
+        whitelabel = await getWhitelabel(session.sub);
+        if (!whitelabel || !whitelabel.active)
+            return NextResponse.json({ error: 'Whitelabel account is inactive' }, { status: 403 });
+        const convertedMode = oldLicense.licenseMode || 'desktop';
+        const allowed = Array.isArray(whitelabel.allowedModes) ? whitelabel.allowedModes : [];
+        if (!allowed.includes(convertedMode))
+            return NextResponse.json({ error: `License type "${convertedMode}" is no longer allowed for this account` }, { status: 403 });
+        const oldWasCounted = !(oldLicense.revoked && typeof oldLicense.revokedReason === 'string' && oldLicense.revokedReason.startsWith('Converted to'));
+        if (!oldWasCounted) {
+            const used = await countIssuedLicenses(session.sub);
+            if (used >= (whitelabel.licenseLimit || 0))
+                return NextResponse.json({ error: `License limit reached (${used}/${whitelabel.licenseLimit || 0}). Contact the administrator to raise your limit.` }, { status: 403 });
+        }
+    }
 
     // Must not already be a converted (non-trial paid) license
     const isTrial = oldLicense.plan === 'trial' || oldLicense.plan === 'trial1day';
@@ -104,7 +125,7 @@ export async function POST(req) {
         affiliateId:      oldLicense.affiliateId || null,
         affiliateName:    oldLicense.affiliateName || null,
         issuedBy:         session.sub,
-        issuedByName:     session.username,
+        issuedByName:     whitelabel ? (whitelabel.name || session.username) : session.username,
         issuedAt:         nowTs,
         activated:        false,
         activatedAt:      null,
@@ -114,6 +135,8 @@ export async function POST(req) {
         revokedAt:        null,
         revokedReason:    null,
         convertedFromKey: oldKey,
+        whitelabelIssued: whitelabel ? true : undefined,
+        whitelabelName:   whitelabel ? (whitelabel.name || whitelabel.username) : null,
         affiliateCommissionAmount: null, // filled below
     };
 

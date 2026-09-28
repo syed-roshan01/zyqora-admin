@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import AppLayout from '@/components/AppLayout';
 import { apiFetch } from '@/lib/apiFetch';
 
@@ -35,6 +36,7 @@ const EMPTY_FORM = {
 };
 
 export default function ExpensesPage() {
+    const router = useRouter();
     const [user, setUser] = useState(null);
     const [users, setUsers] = useState([]);
     const [expenses, setExpenses] = useState([]);
@@ -105,7 +107,11 @@ export default function ExpensesPage() {
     useEffect(() => {
         try {
             const raw = localStorage.getItem('zyqora_admin_user');
-            if (raw) setUser(JSON.parse(raw));
+            if (raw) {
+                const u = JSON.parse(raw);
+                if (u?.role === 'whitelabel') { router.replace('/licenses'); return; }
+                setUser(u);
+            }
         } catch {}
         load();
     }, []);
