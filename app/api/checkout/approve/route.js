@@ -25,8 +25,21 @@ export async function POST(req) {
 
         // Best-effort email; the app also picks up the key by polling /claim.
         sendKeyEmail({
-            to: order.customer?.email, name: order.customer?.name, key: license.key, planName: order.planName,
-            expiryText: new Date(license.expiryTs * 1000).toDateString(),
+            to: order.customer?.email,
+            name: order.customer?.name,
+            key: license.key,
+            planName: order.planName,
+            expiryText: new Date(license.expiryTs * 1000).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+            invoice: {
+                invoiceId: `INV-${String(license.key).slice(0, 8)}`,
+                date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+                plan: order.planName,
+                amount: order.amount || license.price,
+                deviceLimit: license.deviceLimit,
+                machineId: license.machineId,
+                paymentRef: order.utr || '',
+                validity: `${new Date(license.issuedAt * 1000).toLocaleDateString('en-IN')} to ${new Date(license.expiryTs * 1000).toLocaleDateString('en-IN')}`,
+            },
         });
         return NextResponse.json({ ok: true, key: license.key });
     } catch (e) {

@@ -5,6 +5,7 @@ import { apiFetch } from '@/lib/apiFetch';
 import Modal from '@/components/Modal';
 import { TableSkeleton } from '@/components/Skeleton';
 import { useToast } from '@/components/Toast';
+import { BUSINESS } from '@/lib/business';
 
 const PLANS = [
     { value: 'trial1day', label: 'Trial (1 day)'         },
@@ -366,166 +367,138 @@ export default function LicensesPage() {
 
             const l = license;
             const doc = new jsPDF({ unit: 'pt', format: 'a4' });
-            const pageWidth = doc.internal.pageSize.getWidth();
-            const pageHeight = doc.internal.pageSize.getHeight();
+            const W = doc.internal.pageSize.getWidth();
+            const H = doc.internal.pageSize.getHeight();
+            const M = 40;
+            const pdfMoney = (v) => 'Rs. ' + Math.max(0, Number(toAmountNumber(v)) || 0).toLocaleString('en-IN');
+
+            const NAVY = [11, 34, 74], INK = [30, 41, 59], MUT = [100, 116, 139], LINE = [226, 232, 240], SOFT = [248, 250, 252], LIGHT = [176, 196, 232];
 
             const logo = await loadImageAsDataUrl('/favicon_io/android-chrome-192x192.png').catch(() => null);
             const issuedDate = fmtDate(l.issuedAt);
-            const dueDate = l.isLifetime ? 'Lifetime' : fmtDate(l.expiryTs);
-            const invoiceId = `INV-${String(l.key || '').slice(0, 8)}`;
-            const baseAmount = toAmountNumber(l.price);
-            const paidAmount = Math.min(baseAmount, toAmountNumber(l.discountedPrice ?? l.price));
-            const discountAmount = Math.max(0, baseAmount - paidAmount);
-            const hasDiscount = discountAmount > 0;
-            const discountPercent = baseAmount > 0 ? (discountAmount / baseAmount) * 100 : 0;
-            const discountPercentRounded = Math.round(discountPercent);
-            const subtotalAmount = fmtMoney(baseAmount);
-            const discountPercentText = `${discountPercentRounded}%`;
-            const totalAmount = fmtMoney(paidAmount);
+            const expiryText = l.isLifetime ? 'Lifetime' : fmtDate(l.expiryTs);
+            const invoiceId = `INV-${String(l.key || '').slice(0, 8).toUpperCase()}`;
+            const todayStr = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+            const base = toAmountNumber(l.price);
+            const paid = Math.min(base, toAmountNumber(l.discountedPrice ?? l.price));
+            const discount = Math.max(0, base - paid);
+            const hasDiscount = discount > 0;
             const activeFeatures = FEATURE_OPTIONS
                 .filter(f => (l.features ? l.features[f.key] !== false : true))
-                .map(f => f.label)
-                .join(', ') || '-';
+                .map(f => f.label).join(', ') || '-';
 
             // Header band
-            doc.setFillColor(12, 36, 74);
-            doc.rect(0, 0, pageWidth, 100, 'F');
-            doc.setFillColor(14, 116, 144);
-            doc.rect(0, 92, pageWidth, 8, 'F');
+            doc.setFillColor(NAVY[0], NAVY[1], NAVY[2]); doc.rect(0, 0, W, 94, 'F');
+            doc.setFillColor(37, 211, 102); doc.rect(0, 94, W, 3, 'F');
+            if (logo) doc.addImage(logo, 'PNG', M, 25, 44, 44);
+            const nameX = logo ? M + 56 : M;
+            doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(19);
+            doc.text(BUSINESS.name, nameX, 46);
+            doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(LIGHT[0], LIGHT[1], LIGHT[2]);
+            doc.text(BUSINESS.tagline, nameX, 62);
+            doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(18);
+            doc.text('INVOICE', W - M, 42, { align: 'right' });
+            doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(LIGHT[0], LIGHT[1], LIGHT[2]);
+            doc.text(`No.  ${invoiceId}`, W - M, 60, { align: 'right' });
+            doc.text(`Date  ${todayStr}`, W - M, 74, { align: 'right' });
 
-            if (logo) {
-                doc.addImage(logo, 'PNG', 40, 20, 48, 48);
-            }
+            // Billed To / From
+            const topY = 128;
+            const colR = W / 2 + 10;
+            doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(MUT[0], MUT[1], MUT[2]);
+            doc.text('BILLED TO', M, topY);
+            doc.text('FROM', colR, topY);
+            doc.setFont('helvetica', 'bold'); doc.setFontSize(11.5); doc.setTextColor(INK[0], INK[1], INK[2]);
+            doc.text(l.clientName || '-', M, topY + 18);
+            doc.text(BUSINESS.name, colR, topY + 18);
+            doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(MUT[0], MUT[1], MUT[2]);
+            let ly = topY + 34;
+            if (l.clientPhone) { doc.text(String(l.clientPhone), M, ly); ly += 14; }
+            if (l.clientEmail) { doc.text(String(l.clientEmail), M, ly); ly += 14; }
+            let ry = topY + 34;
+            doc.text(BUSINESS.website, colR, ry); ry += 14;
+            doc.text(BUSINESS.email, colR, ry); ry += 14;
+            doc.text(BUSINESS.phone, colR, ry); ry += 14;
 
-            doc.setTextColor(255, 255, 255);
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(24);
-            doc.text('ZYQORA', 96, 44);
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(10);
-            doc.text('License Activation Invoice', 96, 63);
-
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(14);
-            doc.text('INVOICE', pageWidth - 130, 38);
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(10);
-            doc.text(`Invoice #: ${invoiceId}`, pageWidth - 200, 56);
-            doc.text(`Date: ${new Date().toLocaleDateString('en-IN')}`, pageWidth - 200, 72);
-            doc.text(`Issued: ${issuedDate}`, pageWidth - 200, 88);
-
-            doc.setFillColor(245, 247, 251);
-            doc.rect(40, 118, pageWidth - 80, 84, 'F');
-
-            doc.setTextColor(30, 41, 59);
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(11);
-            doc.text('Bill To', 52, 138);
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(10);
-            doc.text(`Client: ${l.clientName || '-'}`, 52, 156);
-            doc.text(`Phone: ${l.clientPhone || '-'}`, 52, 172);
-            doc.text(`Email: ${l.clientEmail || '-'}`, 52, 188);
-
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(11);
-            doc.text('Account Details', pageWidth - 250, 138);
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(10);
-            doc.text(`Issued By: ${l.issuedByName || '-'}`, pageWidth - 250, 156);
-            doc.text(`Business: ${l.businessCategory || '-'}`, pageWidth - 250, 172);
-            doc.text(`Website: ${l.website || 'No website'}`, pageWidth - 250, 188);
-
+            // Line items
             autoTable(doc, {
-                startY: 224,
-                head: [['Description', 'Details', 'Amount']],
-                body: [
-                    ['Product', 'Zyqora Software License Activation', subtotalAmount],
-                    ['Plan', String(l.plan || '-').toUpperCase(), ''],
-                    ['Validity', `${issuedDate} to ${dueDate}`, ''],
-                    ['Device Limit', String(l.deviceLimit || 1), ''],
-                    ['License Key', l.key || '-', ''],
-                    ['Machine ID', l.machineId || '-', ''],
-                    ['Features Included', activeFeatures, ''],
-                    ...(hasDiscount ? [['Discounted Price', 'Final payable amount after discount', totalAmount]] : []),
-                ],
+                startY: Math.max(ly, ry) + 16,
+                head: [['Description', 'Qty', 'Amount']],
+                body: [[
+                    `Zyqora ${String(l.planTier || l.plan || '').toUpperCase()} - Software License (1 year)\n${l.deviceLimit || 1} device${(l.deviceLimit || 1) > 1 ? 's' : ''}`,
+                    '1',
+                    pdfMoney(base),
+                ]],
                 theme: 'grid',
-                styles: { fontSize: 9.5, cellPadding: 7, textColor: [30, 41, 59] },
-                headStyles: { fillColor: [12, 36, 74], textColor: [255, 255, 255], fontStyle: 'bold' },
+                styles: { fontSize: 10, cellPadding: 9, textColor: INK, lineColor: LINE, lineWidth: 0.5 },
+                headStyles: { fillColor: NAVY, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9.5 },
                 columnStyles: {
-                    0: { cellWidth: 130, fontStyle: 'bold' },
-                    1: { cellWidth: 330 },
-                    2: { cellWidth: 80, halign: 'right', fontStyle: 'bold' },
+                    0: { cellWidth: W - M * 2 - 160 },
+                    1: { cellWidth: 70, halign: 'center' },
+                    2: { cellWidth: 90, halign: 'right', fontStyle: 'bold' },
                 },
+                margin: { left: M, right: M },
             });
 
-            let finalY = doc.lastAutoTable?.finalY || 450;
-            doc.setDrawColor(226, 232, 240);
-            doc.line(40, finalY + 24, pageWidth - 40, finalY + 24);
+            // Totals
+            let y = (doc.lastAutoTable?.finalY || 300) + 18;
+            const totX = W - M - 208, valX = W - M;
+            const addLine = (label, val, bold, size) => {
+                doc.setFont('helvetica', bold ? 'bold' : 'normal'); doc.setFontSize(size || 10);
+                doc.setTextColor(...(bold ? INK : MUT));
+                doc.text(label, totX, y); doc.text(val, valX, y, { align: 'right' });
+                y += (size || 10) + 8;
+            };
+            addLine('Subtotal', pdfMoney(base));
+            if (hasDiscount) addLine('Discount', '- ' + pdfMoney(discount));
+            doc.setDrawColor(LINE[0], LINE[1], LINE[2]); doc.line(totX, y - 4, valX, y - 4);
+            y += 8;
+            doc.setFillColor(SOFT[0], SOFT[1], SOFT[2]); doc.rect(totX - 12, y - 14, 232, 28, 'F');
+            addLine('Total Paid', pdfMoney(paid), true, 13);
 
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(12);
-            doc.text('Subtotal', pageWidth - 200, finalY + 46);
-            doc.text(subtotalAmount, pageWidth - 60, finalY + 46, { align: 'right' });
-
-            let totalY = finalY + 68;
-            if (hasDiscount) {
-                doc.setFontSize(10);
-                doc.setFont('helvetica', 'normal');
-                doc.text('Discount', pageWidth - 200, finalY + 62);
-                doc.text(discountPercentText, pageWidth - 60, finalY + 62, { align: 'right' });
-                totalY = finalY + 84;
-            }
-
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(13);
-            doc.text('Total Amount', pageWidth - 200, totalY);
-            doc.text(totalAmount, pageWidth - 60, totalY, { align: 'right' });
-
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(9.5);
-            doc.setTextColor(71, 85, 105);
-            const note = l.notes ? `Note: ${l.notes}` : 'Note: This invoice confirms successful license issuance for the above client.';
-            doc.text(note, 40, finalY + 48, { maxWidth: 320 });
-
-            finalY += 108;
-            if (finalY > pageHeight - 180) {
-                doc.addPage();
-                finalY = 60;
-            }
-
-            doc.setFillColor(240, 249, 255);
-            doc.rect(40, finalY, pageWidth - 80, 158, 'F');
-            doc.setDrawColor(14, 116, 144);
-            doc.rect(40, finalY, pageWidth - 80, 158);
-
-            doc.setTextColor(3, 105, 161);
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(11);
-            doc.text('Terms and Conditions', 52, finalY + 22);
-
-            doc.setTextColor(71, 85, 105);
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(9.2);
-            const terms = [
-                'For assistance, please contact Zyqora Support at +91 92177 58442.',
-                'Complimentary support is available for 3 days from the date of license activation.',
-                'Extended monthly support can be opted for through an additional paid support plan.',
-                'Each successful referral qualifies for a one-month extension to the active plan, subject to verification by Zyqora.',
-                'Zyqora includes anti-ban safeguards; use Trust Builder and the safest sending methods before scaling campaigns.',
-                'All templates and outbound messages must comply with Meta and WhatsApp policy guidelines.',
-                'Avoid spam or abusive outreach; repeated user reports can lead to temporary or permanent account restrictions.',
-                'Zyqora is not liable for any number blocking, limitations, or bans imposed by WhatsApp or Meta.'
+            // License details panel
+            y += 16;
+            if (y > H - 230) { doc.addPage(); y = 50; }
+            const det = [
+                ['License Key', l.key || '-'],
+                ['Machine ID', l.machineId || '-'],
+                ['Validity', `${issuedDate}  to  ${expiryText}`],
+                ...(l.paymentRef ? [['Payment Ref (UPI)', String(l.paymentRef)]] : []),
+                ['Features', activeFeatures],
             ];
-            doc.text(terms.map((t, i) => `${i + 1}. ${t}`).join('\n'), 52, finalY + 40, { maxWidth: pageWidth - 104, lineHeightFactor: 1.5 });
+            const panelH = 100 + (l.paymentRef ? 16 : 0);
+            doc.setFillColor(SOFT[0], SOFT[1], SOFT[2]); doc.setDrawColor(LINE[0], LINE[1], LINE[2]);
+            doc.roundedRect(M, y, W - M * 2, panelH, 6, 6, 'FD');
+            doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor(MUT[0], MUT[1], MUT[2]);
+            doc.text('LICENSE DETAILS', M + 14, y + 20);
+            doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5);
+            let dy = y + 40;
+            det.forEach(([k, v]) => {
+                doc.setTextColor(MUT[0], MUT[1], MUT[2]); doc.text(k, M + 14, dy);
+                doc.setTextColor(INK[0], INK[1], INK[2]); doc.text(String(v), M + 110, dy, { maxWidth: W - M * 2 - 124 });
+                dy += 15;
+            });
 
-            doc.setFillColor(248, 250, 252);
-            doc.rect(0, pageHeight - 54, pageWidth, 54, 'F');
-            doc.setTextColor(100, 116, 139);
-            doc.setFontSize(9);
-            doc.text('Zyqora Support: +91 92177 58442', 40, pageHeight - 32);
-            doc.text('Thank you for choosing Zyqora.', pageWidth - 40, pageHeight - 32, { align: 'right' });
-            doc.text('This is a system-generated invoice and does not require a signature.', 40, pageHeight - 18);
+            // Terms
+            y += panelH + 18;
+            if (y > H - 160) { doc.addPage(); y = 50; }
+            doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(INK[0], INK[1], INK[2]);
+            doc.text('Terms & Support', M, y); y += 16;
+            doc.setFont('helvetica', 'normal'); doc.setFontSize(8.6); doc.setTextColor(MUT[0], MUT[1], MUT[2]);
+            const terms = [
+                `For assistance, contact ${BUSINESS.name} at ${BUSINESS.phone} or ${BUSINESS.email}.`,
+                'Complimentary support for 3 days from activation; extended support available on a paid plan.',
+                'Use Trust Builder and the safest sending methods before scaling campaigns.',
+                'All templates and outbound messages must comply with Meta and WhatsApp policies.',
+                `${BUSINESS.name} is not liable for number blocking, limits or bans imposed by WhatsApp or Meta.`,
+            ];
+            doc.text(terms.map((t, i) => `${i + 1}.  ${t}`).join('\n'), M, y, { maxWidth: W - M * 2, lineHeightFactor: 1.5 });
+
+            // Footer
+            doc.setFillColor(NAVY[0], NAVY[1], NAVY[2]); doc.rect(0, H - 40, W, 40, 'F');
+            doc.setTextColor(LIGHT[0], LIGHT[1], LIGHT[2]); doc.setFontSize(8.5);
+            doc.text(`${BUSINESS.name} - ${BUSINESS.website}`, M, H - 16);
+            doc.text('Thank you for choosing Zyqora. System-generated invoice, no signature required.', W - M, H - 16, { align: 'right' });
 
             const safeName = (l.clientName || 'client').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
             doc.save(`zyqora-invoice-${safeName || 'client'}-${new Date().toISOString().slice(0, 10)}.pdf`);
@@ -972,9 +945,10 @@ export default function LicensesPage() {
                                                 <span className="lic-tag">
                                                     {l.licenseMode === 'cloud' ? 'Cloud' : l.licenseMode === 'app' ? 'App' : 'Desktop'}
                                                     {l.reviewAccess ? ' · Review' : ''}
+                                                    {l.source === 'auto' ? ' · Auto' : ''}
                                                 </span>
                                             </td>
-                                            <td><span className="lic-tag">{l.plan}</span></td>
+                                            <td><span className="lic-tag">{l.planTier ? `${l.plan} · ${l.planTier}` : l.plan}</span></td>
                                             <td className="lic-num">{l.deviceLimit}</td>
                                             <td>
                                                 {l.isLifetime ? (
