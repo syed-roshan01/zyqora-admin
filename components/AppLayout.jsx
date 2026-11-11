@@ -8,6 +8,7 @@ import Icon from '@/components/Icons';
 const ALL_NAV = [
     { href: '/dashboard',  icon: 'dashboard', label: 'Dashboard' },
     { href: '/licenses',   icon: 'key',       label: 'Licenses'  },
+    { href: '/orders',     icon: 'card',      label: 'Orders'    },
     { href: '/sales',      icon: 'trending',  label: 'Sales'     },
     { href: '/expenses',   icon: 'wallet',    label: 'Expenses'  },
     { href: '/admins',       icon: 'users',   label: 'Admins',         superOnly: true },
