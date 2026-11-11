@@ -24,7 +24,7 @@ export async function POST(req) {
         await saveOrder(order);
 
         // Best-effort email; the app also picks up the key by polling /claim.
-        sendKeyEmail({
+        await sendKeyEmail({
             to: order.customer?.email,
             name: order.customer?.name,
             key: license.key,

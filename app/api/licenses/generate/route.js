@@ -3,6 +3,7 @@ import { requireAuth } from '@/lib/auth';
 import { saveLicense, getAffiliate, getLicense, getWhitelabel, countIssuedLicenses } from '@/lib/kv';
 import { saveLog } from '@/lib/logs';
 import { generateKey, planToExpiry, LICENSE_MODES, resolveWlPlans, resolveWlMaxDevices } from '@/lib/license';
+import { sendKeyEmail } from '@/lib/email';
 
 export async function POST(req) {
     const { error, status, session } = await requireAuth(req);
@@ -145,6 +146,27 @@ export async function POST(req) {
             affiliateName: license.affiliateName || null,
         },
     });
+
+    // Email the key + invoice when a client email was provided (best-effort).
+    if (license.clientEmail) {
+        const d = (ts) => new Date(ts * 1000).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+        await sendKeyEmail({
+            to: license.clientEmail,
+            name: license.clientName,
+            key: license.key,
+            planName: license.plan,
+            expiryText: license.isLifetime ? 'Lifetime' : d(license.expiryTs),
+            invoice: {
+                invoiceId: `INV-${String(license.key).slice(0, 8)}`,
+                date: d(license.issuedAt),
+                plan: license.plan,
+                amount: license.discountedPrice || license.price,
+                deviceLimit: license.deviceLimit,
+                machineId: license.machineId,
+                validity: license.isLifetime ? 'Lifetime' : `${d(license.issuedAt)} to ${d(license.expiryTs)}`,
+            },
+        });
+    }
 
     return NextResponse.json({ success: true, key, license });
 }
