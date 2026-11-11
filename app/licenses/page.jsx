@@ -156,6 +156,9 @@ export default function LicensesPage() {
     const [revBusy,  setRevBusy]  = useState(false);
     const [copied,   setCopied]   = useState('');
     const [showDel,  setShowDel]  = useState(null); // { key, clientName }
+    const [selected, setSelected] = useState(() => new Set());
+    const [showBulkDel, setShowBulkDel] = useState(false);
+    const [bulkBusy, setBulkBusy] = useState(false);
     const [delErr,   setDelErr]   = useState('');
     const [delBusy,  setDelBusy]  = useState(false);
     const [showDetail,setShowDetail]= useState(null);   // license object
@@ -321,11 +324,15 @@ export default function LicensesPage() {
     const fmtCompactINR = (n) => '₹' + new Intl.NumberFormat('en-IN', { notation: 'compact', maximumFractionDigits: 1 }).format(n);
 
     // Reset to the first page whenever the filters change
-    useEffect(() => { setPage(1); }, [search, typeFilter, statusFilter]);
+    useEffect(() => { setPage(1); setSelected(new Set()); }, [search, typeFilter, statusFilter]);
 
     const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
     const safePage = Math.min(page, totalPages);
     const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+    const isSuper = user?.role === 'super';
+    const toggleOne = (key) => setSelected(prev => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; });
+    const allFilteredSelected = filtered.length > 0 && filtered.every(l => selected.has(l.key));
+    const toggleAll = () => setSelected(allFilteredSelected ? new Set() : new Set(filtered.map(l => l.key)));
 
     const formPrice = toAmountNumber(form.price);
     const formDiscounted = form.discountedPrice === ''
@@ -517,6 +524,21 @@ export default function LicensesPage() {
         if (r?.ok) { setShowDel(null); load(); toast.success('License deleted'); }
         else { setDelErr(r?.data?.error || 'Failed to delete'); toast.error(r?.data?.error || 'Failed to delete'); }
         setDelBusy(false);
+    };
+
+    const bulkDelete = async () => {
+        setBulkBusy(true);
+        const r = await apiFetch('/api/licenses/bulk-delete', { method: 'POST', body: { keys: Array.from(selected) } });
+        setBulkBusy(false);
+        if (r?.ok) {
+            setShowBulkDel(false);
+            setSelected(new Set());
+            load();
+            const n = r.data?.deleted ?? 0;
+            toast.success(`Deleted ${n} license${n === 1 ? '' : 's'}`);
+        } else {
+            toast.error(r?.data?.error || 'Bulk delete failed');
+        }
     };
 
     const openConvert = (license) => {
@@ -900,10 +922,22 @@ export default function LicensesPage() {
                         </div>
                     ) : (
                     <>
+                    {isSuper && selected.size > 0 && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 10, padding: '10px 14px', marginBottom: 12 }}>
+                            <span style={{ fontSize: 13, color: '#e2e8f0', fontWeight: 600 }}>{selected.size} selected</span>
+                            <button className="btn btn-danger btn-sm" onClick={() => setShowBulkDel(true)}>Delete selected</button>
+                            <button className="btn btn-ghost btn-sm" onClick={() => setSelected(new Set())}>Clear</button>
+                        </div>
+                    )}
                     <div className="table-wrap">
                         <table className="licenses-table">
                             <thead>
                                 <tr>
+                                    {isSuper && (
+                                        <th style={{ width: 34, textAlign: 'center' }}>
+                                            <input type="checkbox" checked={allFilteredSelected} onChange={toggleAll} aria-label="Select all" style={{ cursor: 'pointer' }} />
+                                        </th>
+                                    )}
                                     <th>Client</th>
                                     <th>Key</th>
                                     <th>Type</th>
@@ -922,6 +956,11 @@ export default function LicensesPage() {
                                     const isExpired = !l.isLifetime && days !== null && days < 0;
                                     return (
                                         <tr key={l.key}>
+                                            {isSuper && (
+                                                <td style={{ textAlign: 'center' }}>
+                                                    <input type="checkbox" checked={selected.has(l.key)} onChange={() => toggleOne(l.key)} aria-label="Select license" style={{ cursor: 'pointer' }} />
+                                                </td>
+                                            )}
                                             <td>
                                                 <div className="lic-name" onClick={() => setShowDetail(l)}>{l.clientName || '—'}</div>
                                                 {l.clientPhone && <div className="lic-sub">{l.clientPhone}</div>}
@@ -1321,6 +1360,23 @@ export default function LicensesPage() {
                             <button className="btn btn-ghost" onClick={() => setShowDel(null)} disabled={delBusy}>Cancel</button>
                             <button className="btn btn-danger" onClick={deleteLic} disabled={delBusy}>
                                 {delBusy ? 'Deleting…' : (showDel.price > 0 ? 'Delete Anyway' : 'Delete Permanently')}
+                            </button>
+                        </div>
+                </Modal>
+            )}
+
+            {showBulkDel && (
+                <Modal title="Delete selected licenses" onClose={() => setShowBulkDel(false)} maxWidth={430} busy={bulkBusy}>
+                        <div className="modal-body">
+                            <p style={{ color: '#94a3b8', fontSize: 13 }}>
+                                Permanently delete <span style={{ color: '#e2e8f0', fontWeight: 700 }}>{selected.size}</span> selected license{selected.size === 1 ? '' : 's'}?<br />
+                                <span style={{ fontSize: 12, color: '#ef4444' }}>This removes the records entirely and cannot be undone. Paid deletions are flagged in Logs.</span>
+                            </p>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-ghost" onClick={() => setShowBulkDel(false)} disabled={bulkBusy}>Cancel</button>
+                            <button className="btn btn-danger" onClick={bulkDelete} disabled={bulkBusy}>
+                                {bulkBusy ? 'Deleting…' : `Delete ${selected.size}`}
                             </button>
                         </div>
                 </Modal>
