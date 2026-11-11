@@ -369,12 +369,15 @@ export default function LicensesPage() {
             const doc = new jsPDF({ unit: 'pt', format: 'a4' });
             const W = doc.internal.pageSize.getWidth();
             const H = doc.internal.pageSize.getHeight();
-            const M = 40;
-            const pdfMoney = (v) => 'Rs. ' + Math.max(0, Number(toAmountNumber(v)) || 0).toLocaleString('en-IN');
+            const M = 42;
+            const money = (v) => 'Rs. ' + Math.max(0, Number(toAmountNumber(v)) || 0).toLocaleString('en-IN');
 
-            const NAVY = [11, 34, 74], INK = [30, 41, 59], MUT = [100, 116, 139], LINE = [226, 232, 240], SOFT = [248, 250, 252], LIGHT = [176, 196, 232];
+            const NAVY = [13, 33, 68], GREEN = [21, 128, 61], GBG = [220, 252, 231], INK = [17, 24, 39], MUT = [107, 114, 128], LINE = [229, 231, 235], SOFT = [249, 250, 251], LIGHT = [176, 196, 232];
 
-            const logo = await loadImageAsDataUrl('/favicon_io/android-chrome-192x192.png').catch(() => null);
+            const [logo, symbol] = await Promise.all([
+                loadImageAsDataUrl(BUSINESS.logoPath).catch(() => null),
+                loadImageAsDataUrl(BUSINESS.logoSymbol).catch(() => null),
+            ]);
             const issuedDate = fmtDate(l.issuedAt);
             const expiryText = l.isLifetime ? 'Lifetime' : fmtDate(l.expiryTs);
             const invoiceId = `INV-${String(l.key || '').slice(0, 8).toUpperCase()}`;
@@ -383,35 +386,31 @@ export default function LicensesPage() {
             const paid = Math.min(base, toAmountNumber(l.discountedPrice ?? l.price));
             const discount = Math.max(0, base - paid);
             const hasDiscount = discount > 0;
+            const planName = String(l.planTier || l.plan || '').toUpperCase();
             const activeFeatures = FEATURE_OPTIONS
                 .filter(f => (l.features ? l.features[f.key] !== false : true))
                 .map(f => f.label).join(', ') || '-';
 
-            // Header band
-            doc.setFillColor(NAVY[0], NAVY[1], NAVY[2]); doc.rect(0, 0, W, 94, 'F');
-            doc.setFillColor(37, 211, 102); doc.rect(0, 94, W, 3, 'F');
-            if (logo) doc.addImage(logo, 'PNG', M, 25, 44, 44);
-            const nameX = logo ? M + 56 : M;
-            doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(19);
-            doc.text(BUSINESS.name, nameX, 46);
-            doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(LIGHT[0], LIGHT[1], LIGHT[2]);
-            doc.text(BUSINESS.tagline, nameX, 62);
-            doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(18);
-            doc.text('INVOICE', W - M, 42, { align: 'right' });
-            doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(LIGHT[0], LIGHT[1], LIGHT[2]);
-            doc.text(`No.  ${invoiceId}`, W - M, 60, { align: 'right' });
-            doc.text(`Date  ${todayStr}`, W - M, 74, { align: 'right' });
+            // Header
+            if (logo) doc.addImage(logo, 'PNG', M, 32, 150, 55);
+            else { doc.setFont('helvetica', 'bold'); doc.setFontSize(20); doc.setTextColor(...NAVY); doc.text(BUSINESS.name, M, 60); }
+            doc.setFont('helvetica', 'bold'); doc.setFontSize(22); doc.setTextColor(...NAVY); doc.text('INVOICE', W - M, 52, { align: 'right' });
+            const pillW = 60, pillX = W - M - pillW, pillY = 62;
+            doc.setFillColor(...GBG); doc.roundedRect(pillX, pillY, pillW, 20, 10, 10, 'F');
+            doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor(...GREEN); doc.text('PAID', pillX + pillW / 2, pillY + 13.5, { align: 'center' });
+            doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(...MUT);
+            doc.text(`Invoice No.  ${invoiceId}`, W - M, pillY + 38, { align: 'right' });
+            doc.text(`Date  ${todayStr}`, W - M, pillY + 52, { align: 'right' });
+            doc.setFillColor(...LINE); doc.rect(M, 122, W - 2 * M, 1, 'F');
+            doc.setFillColor(37, 211, 102); doc.rect(M, 121, 72, 2, 'F');
 
             // Billed To / From
-            const topY = 128;
-            const colR = W / 2 + 10;
-            doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(MUT[0], MUT[1], MUT[2]);
-            doc.text('BILLED TO', M, topY);
-            doc.text('FROM', colR, topY);
-            doc.setFont('helvetica', 'bold'); doc.setFontSize(11.5); doc.setTextColor(INK[0], INK[1], INK[2]);
-            doc.text(l.clientName || '-', M, topY + 18);
-            doc.text(BUSINESS.name, colR, topY + 18);
-            doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(MUT[0], MUT[1], MUT[2]);
+            const topY = 150, colR = W / 2 + 10;
+            doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(...MUT);
+            doc.text('BILLED TO', M, topY); doc.text('FROM', colR, topY);
+            doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(...INK);
+            doc.text(l.clientName || '-', M, topY + 18); doc.text(BUSINESS.name, colR, topY + 18);
+            doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(...MUT);
             let ly = topY + 34;
             if (l.clientPhone) { doc.text(String(l.clientPhone), M, ly); ly += 14; }
             if (l.clientEmail) { doc.text(String(l.clientEmail), M, ly); ly += 14; }
@@ -420,45 +419,36 @@ export default function LicensesPage() {
             doc.text(BUSINESS.email, colR, ry); ry += 14;
             doc.text(BUSINESS.phone, colR, ry); ry += 14;
 
-            // Line items
+            // Line item
+            const tableTop = Math.max(ly, ry) + 18;
             autoTable(doc, {
-                startY: Math.max(ly, ry) + 16,
+                startY: tableTop,
                 head: [['Description', 'Qty', 'Amount']],
-                body: [[
-                    `Zyqora ${String(l.planTier || l.plan || '').toUpperCase()} - Software License (1 year)\n${l.deviceLimit || 1} device${(l.deviceLimit || 1) > 1 ? 's' : ''}`,
-                    '1',
-                    pdfMoney(base),
-                ]],
-                theme: 'grid',
-                styles: { fontSize: 10, cellPadding: 9, textColor: INK, lineColor: LINE, lineWidth: 0.5 },
-                headStyles: { fillColor: NAVY, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9.5 },
-                columnStyles: {
-                    0: { cellWidth: W - M * 2 - 160 },
-                    1: { cellWidth: 70, halign: 'center' },
-                    2: { cellWidth: 90, halign: 'right', fontStyle: 'bold' },
-                },
+                body: [[`Zyqora ${planName} - Software License (1 year)\n${l.deviceLimit || 1} device${(l.deviceLimit || 1) > 1 ? 's' : ''} included`, '1', money(base)]],
+                theme: 'plain',
+                styles: { fontSize: 10, cellPadding: { top: 11, bottom: 11, left: 12, right: 12 }, textColor: INK },
+                headStyles: { fillColor: NAVY, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9, cellPadding: { top: 9, bottom: 9, left: 12, right: 12 } },
+                columnStyles: { 0: { cellWidth: W - M * 2 - 150 }, 1: { cellWidth: 60, halign: 'center' }, 2: { cellWidth: 90, halign: 'right', fontStyle: 'bold' } },
                 margin: { left: M, right: M },
             });
+            let y = doc.lastAutoTable.finalY;
+            doc.setDrawColor(...LINE); doc.setLineWidth(0.7); doc.roundedRect(M, tableTop, W - 2 * M, y - tableTop, 3, 3, 'S');
 
             // Totals
-            let y = (doc.lastAutoTable?.finalY || 300) + 18;
-            const totX = W - M - 208, valX = W - M;
-            const addLine = (label, val, bold, size) => {
-                doc.setFont('helvetica', bold ? 'bold' : 'normal'); doc.setFontSize(size || 10);
-                doc.setTextColor(...(bold ? INK : MUT));
-                doc.text(label, totX, y); doc.text(val, valX, y, { align: 'right' });
-                y += (size || 10) + 8;
-            };
-            addLine('Subtotal', pdfMoney(base));
-            if (hasDiscount) addLine('Discount', '- ' + pdfMoney(discount));
-            doc.setDrawColor(LINE[0], LINE[1], LINE[2]); doc.line(totX, y - 4, valX, y - 4);
-            y += 8;
-            doc.setFillColor(SOFT[0], SOFT[1], SOFT[2]); doc.rect(totX - 12, y - 14, 232, 28, 'F');
-            addLine('Total Paid', pdfMoney(paid), true, 13);
+            y += 22; const cardX = W - M - 200;
+            doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(...MUT); doc.text('Subtotal', cardX, y);
+            doc.setTextColor(...INK); doc.text(money(base), W - M, y, { align: 'right' });
+            if (hasDiscount) {
+                y += 16; doc.setTextColor(...MUT); doc.text('Discount', cardX, y);
+                doc.setTextColor(...INK); doc.text('- ' + money(discount), W - M, y, { align: 'right' });
+            }
+            y += 20;
+            doc.setFillColor(...NAVY); doc.roundedRect(cardX - 14, y - 15, 214, 32, 6, 6, 'F');
+            doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.text('Total Paid', cardX, y + 5);
+            doc.setFontSize(15); doc.text(money(paid), W - M - 6, y + 6, { align: 'right' });
 
-            // License details panel
-            y += 16;
-            if (y > H - 230) { doc.addPage(); y = 50; }
+            // License details
+            y += 48;
             const det = [
                 ['License Key', l.key || '-'],
                 ['Machine ID', l.machineId || '-'],
@@ -466,39 +456,39 @@ export default function LicensesPage() {
                 ...(l.paymentRef ? [['Payment Ref (UPI)', String(l.paymentRef)]] : []),
                 ['Features', activeFeatures],
             ];
-            const panelH = 100 + (l.paymentRef ? 16 : 0);
-            doc.setFillColor(SOFT[0], SOFT[1], SOFT[2]); doc.setDrawColor(LINE[0], LINE[1], LINE[2]);
-            doc.roundedRect(M, y, W - M * 2, panelH, 6, 6, 'FD');
-            doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor(MUT[0], MUT[1], MUT[2]);
-            doc.text('LICENSE DETAILS', M + 14, y + 20);
+            const panelH = 104 + (l.paymentRef ? 16 : 0);
+            doc.setFillColor(...SOFT); doc.setDrawColor(...LINE); doc.setLineWidth(0.7);
+            doc.roundedRect(M, y, W - M * 2, panelH, 8, 8, 'FD');
+            doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...MUT); doc.text('LICENSE DETAILS', M + 16, y + 22);
             doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5);
-            let dy = y + 40;
+            let dy = y + 42;
             det.forEach(([k, v]) => {
-                doc.setTextColor(MUT[0], MUT[1], MUT[2]); doc.text(k, M + 14, dy);
-                doc.setTextColor(INK[0], INK[1], INK[2]); doc.text(String(v), M + 110, dy, { maxWidth: W - M * 2 - 124 });
+                doc.setTextColor(...MUT); doc.text(k, M + 16, dy);
+                doc.setTextColor(...INK); doc.text(String(v), M + 120, dy, { maxWidth: W - M * 2 - 136 });
                 dy += 15;
             });
 
             // Terms
-            y += panelH + 18;
-            if (y > H - 160) { doc.addPage(); y = 50; }
-            doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(INK[0], INK[1], INK[2]);
-            doc.text('Terms & Support', M, y); y += 16;
-            doc.setFont('helvetica', 'normal'); doc.setFontSize(8.6); doc.setTextColor(MUT[0], MUT[1], MUT[2]);
+            y += panelH + 24;
+            if (y > H - 150) { doc.addPage(); y = 60; }
+            doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(...INK); doc.text('Terms & Support', M, y); y += 15;
+            doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...MUT);
             const terms = [
-                `For assistance, contact ${BUSINESS.name} at ${BUSINESS.phone} or ${BUSINESS.email}.`,
+                `For assistance, contact ${BUSINESS.support} or WhatsApp ${BUSINESS.phone}.`,
                 'Complimentary support for 3 days from activation; extended support available on a paid plan.',
                 'Use Trust Builder and the safest sending methods before scaling campaigns.',
                 'All templates and outbound messages must comply with Meta and WhatsApp policies.',
                 `${BUSINESS.name} is not liable for number blocking, limits or bans imposed by WhatsApp or Meta.`,
             ];
-            doc.text(terms.map((t, i) => `${i + 1}.  ${t}`).join('\n'), M, y, { maxWidth: W - M * 2, lineHeightFactor: 1.5 });
+            doc.text(terms.map((t, i) => `${i + 1}.  ${t}`).join('\n'), M, y, { maxWidth: W - M * 2, lineHeightFactor: 1.55 });
 
             // Footer
-            doc.setFillColor(NAVY[0], NAVY[1], NAVY[2]); doc.rect(0, H - 40, W, 40, 'F');
-            doc.setTextColor(LIGHT[0], LIGHT[1], LIGHT[2]); doc.setFontSize(8.5);
-            doc.text(`${BUSINESS.name} - ${BUSINESS.website}`, M, H - 16);
-            doc.text('Thank you for choosing Zyqora. System-generated invoice, no signature required.', W - M, H - 16, { align: 'right' });
+            doc.setFillColor(...NAVY); doc.rect(0, H - 46, W, 46, 'F');
+            if (symbol) doc.addImage(symbol, 'PNG', M, H - 37, 26, 26);
+            const fx = symbol ? M + 34 : M;
+            doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.text(BUSINESS.name, fx, H - 25);
+            doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...LIGHT); doc.text(`${BUSINESS.website}  ·  ${BUSINESS.support}`, fx, H - 14);
+            doc.setFontSize(8); doc.text('Thank you for choosing Zyqora.', W - M, H - 20, { align: 'right' });
 
             const safeName = (l.clientName || 'client').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
             doc.save(`zyqora-invoice-${safeName || 'client'}-${new Date().toISOString().slice(0, 10)}.pdf`);
