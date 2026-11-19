@@ -13,7 +13,7 @@ export async function POST(req) {
             plan, deviceLimit, customDays, notes, price, discountedPrice, features,
             businessCategory, website, affiliateId, affiliateName, reviewAccess } = await req.json();
 
-    const DEFAULT_FEATURES = { mobile: true, trustBuilder: true, autoReply: true, chatbot: true, liveChat: true, groupGrabber: true, aiAutomation: true, forms: true };
+    const DEFAULT_FEATURES = { mobile: true, trustBuilder: true, autoReply: true, chatbot: true, liveChat: true, groupGrabber: true, aiAutomation: true, forms: true, officialApi: true };
 
     // Cloud licenses use a fixed internal identity marker instead of a real
     // device — every other mode (desktop, app) is bound to one specific

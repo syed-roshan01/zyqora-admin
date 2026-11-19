@@ -55,7 +55,7 @@ export async function POST(req) {
         return NextResponse.json({ error: 'Only trial or free licenses can be converted' }, { status: 400 });
     }
 
-    const DEFAULT_FEATURES = { mobile: true, trustBuilder: true, autoReply: true, chatbot: true, liveChat: true, groupGrabber: true, aiAutomation: true, forms: true };
+    const DEFAULT_FEATURES = { mobile: true, trustBuilder: true, autoReply: true, chatbot: true, liveChat: true, groupGrabber: true, aiAutomation: true, forms: true, officialApi: true };
 
     const dl          = Math.max(1, Math.min(255, parseInt(deviceLimit) || 1));
     if (whitelabel) {

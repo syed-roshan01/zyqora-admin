@@ -14,6 +14,7 @@ const ALL_NAV = [
     { href: '/admins',       icon: 'users',   label: 'Admins',         superOnly: true },
     { href: '/whitelabel',   icon: 'layers',  label: 'Whitelabel',     superOnly: true },
     { href: '/affiliates',   icon: 'share',   label: 'Affiliates'                   },
+    { href: '/whatsapp-api', icon: 'zap',     label: 'Official WA API'              },
     { href: '/payments',     icon: 'rupee',   label: 'Payments'                     },
     { href: '/withdrawals',  icon: 'arrowUp', label: 'Withdrawals'                      },
     { href: '/logs',         icon: 'list',    label: 'Logs',           superOnly: true },

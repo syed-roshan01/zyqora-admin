@@ -28,9 +28,10 @@ const FEATURE_OPTIONS = [
     { key: 'groupGrabber', label: 'Group Grabber',     sub: 'Extract groups'           },
     { key: 'aiAutomation', label: 'AI Automation',     sub: 'AI-powered actions'       },
     { key: 'forms',        label: 'Interactive Forms', sub: 'Conversational data forms' },
+    { key: 'officialApi',  label: 'Official WhatsApp API', sub: 'Meta Cloud API module' },
 ];
 
-const DEFAULT_FEATURES = { mobile: true, trustBuilder: true, autoReply: true, chatbot: true, liveChat: true, groupGrabber: true, aiAutomation: true, forms: true };
+const DEFAULT_FEATURES = { mobile: true, trustBuilder: true, autoReply: true, chatbot: true, liveChat: true, groupGrabber: true, aiAutomation: true, forms: true, officialApi: true };
 
 const DEFAULT_FORM = {
     clientName: '', clientPhone: '', clientEmail: '',
